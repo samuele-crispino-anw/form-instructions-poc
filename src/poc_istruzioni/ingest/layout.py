@@ -18,7 +18,7 @@ from pathlib import Path
 import fitz  # PyMuPDF
 import pdfplumber
 
-from poc_istruzioni.ingest.checks import DEFAULT_ARTIFACTS
+from poc_istruzioni.ingest.checks import DEFAULT_ARTIFACTS, extract_numbers
 
 # Soglie di classificazione (euristiche, tarabili sui numeri reali del documento).
 MIN_WORDS_ANOMALOUS = 15
@@ -41,6 +41,7 @@ class LayoutMetrics:
     pct_lines_wide: float
     n_lines_rects: int
     n_images: int
+    n_numbers: int  # densità numerica (per il pre-routing A.2)
     has_ghost: bool
     classification: str
 
@@ -100,6 +101,7 @@ def analyze_document(pdf_path: Path | str) -> list[LayoutMetrics]:
             n_words, n_lines, gutter_cross, median_w, pct_wide = _page_geometry(page)
             text = page.get_text()
             has_ghost = any(a.lower() in text.lower() for a in DEFAULT_ARTIFACTS)
+            n_numbers = len(extract_numbers(text))
             n_images = len(page.get_images())
             pp = plumber.pages[i]
             n_lines_rects = len(pp.lines) + len(pp.rects)
@@ -124,6 +126,7 @@ def analyze_document(pdf_path: Path | str) -> list[LayoutMetrics]:
                     pct_lines_wide=round(pct_wide, 3),
                     n_lines_rects=n_lines_rects,
                     n_images=n_images,
+                    n_numbers=n_numbers,
                     has_ghost=has_ghost,
                     classification=cls,
                 )

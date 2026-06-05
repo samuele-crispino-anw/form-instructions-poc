@@ -9,7 +9,7 @@ def _m(n_words: int, n_lines_rects: int) -> LayoutMetrics:
     return LayoutMetrics(
         page=1, n_words=n_words, n_lines=10, gutter_cross=5, gutter_ratio=0.5,
         median_line_width=0.8, pct_lines_wide=0.7, n_lines_rects=n_lines_rects,
-        n_images=0, has_ghost=False, classification="single_column",
+        n_images=0, n_numbers=10, has_ghost=False, classification="single_column",
     )
 
 
