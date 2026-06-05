@@ -67,13 +67,25 @@ def coverage_ratio(vlm_md: str, pdf_text: str) -> float:
     return len(vlm_md.strip()) / pdf_len
 
 
-def has_repetition(text: str, *, n: int = 10, max_repeats: int = 3) -> bool:
-    """True se un n-gramma di parole si ripete più di max_repeats volte (degenerazione)."""
+def has_repetition(
+    text: str, *, n: int = 10, max_repeats: int = 8, min_line_diversity: float = 0.5
+) -> bool:
+    """True se l'output degenera (loop). Distingue il loop dalla ripetizione legittima.
+
+    La degenerazione collassa la diversità delle righe (stessa riga ripetuta molte volte);
+    le tabelle/liste con "ditto" hanno righe diverse -> alta diversità, NON flaggate.
+    Soglia n-gram alta (>8) come rete per loop senza struttura a righe.
+    """
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if len(lines) >= 12:
+        # output multi-riga (incl. tabelle): la degenerazione collassa le righe uniche.
+        return len(set(lines)) / len(lines) < min_line_diversity
+    # output a poche righe: rete n-gram per loop "in blocco" senza struttura a righe.
     words = text.split()
-    if len(words) < n:
-        return False
-    grams = Counter(tuple(words[i : i + n]) for i in range(len(words) - n + 1))
-    return any(c > max_repeats for c in grams.values())
+    if len(words) >= n:
+        grams = Counter(tuple(words[i : i + n]) for i in range(len(words) - n + 1))
+        return any(c > max_repeats for c in grams.values())
+    return False
 
 
 def is_empty_or_refusal(text: str) -> bool:

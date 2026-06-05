@@ -269,6 +269,8 @@ def measure_escalation(
     prompt = load_prompt("convert_text")
     llm = LlmClient(ctx.conn, ctx.prices, settings=ctx.settings)
     doc = fitz.open(pdf_path)
+    out_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "escalation_measure"
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     typer.echo(f"Misura escalation: {len(sample)} pagine single_column con {model} -> {sample}")
     fails = 0
@@ -278,6 +280,7 @@ def measure_escalation(
             llm, extract_text_with_cues(doc[p - 1]), model=model, prompt=prompt,
             page_n=p, scopo="spike:haiku-escalation-rate",
         )
+        (out_dir / f"p{p:03d}.md").write_text(res.text, encoding="utf-8")  # salvataggio per re-gate
         cost += res.cost.usd
         ref = strip_lines(pages_text[p - 1], boiler)
         rep = run_gate_from_settings(res.text, ref, ctx.settings, page_number=p)

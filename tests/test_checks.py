@@ -44,8 +44,15 @@ def test_coverage_ratio() -> None:
 def test_has_repetition() -> None:
     normale = "questa e una frase normale senza ripetizioni evidenti di sorta qui"
     assert has_repetition(normale) is False
-    loop = " ".join(["riga uno due tre quattro cinque sei sette otto nove dieci"] * 5)
+    # degenerazione: stessa riga ripetuta molte volte -> diversità righe crollata
+    loop = "\n".join(["riga ripetuta sempre uguale identica"] * 30)
     assert has_repetition(loop) is True
+
+
+def test_has_repetition_tollera_tabelle() -> None:
+    # tabella con righe diverse (alta diversità) ma una frase ricorrente -> NON degenerazione
+    rows = [f"| {i} | contratti stipulati dal 1 gennaio 2025 | RP{i} |" for i in range(20)]
+    assert has_repetition("\n".join(rows)) is False
 
 
 def test_is_empty_or_refusal() -> None:
