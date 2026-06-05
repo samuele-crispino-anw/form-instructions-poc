@@ -7,7 +7,11 @@ import pytest
 
 from poc_istruzioni.config import CachePricing, Currency, ModelPrice, Prices
 from poc_istruzioni.db.connection import connect, init_db
-from poc_istruzioni.ingest.textroute import convert_text_to_markdown, extract_text_with_cues
+from poc_istruzioni.ingest.textroute import (
+    _span_text,
+    convert_text_to_markdown,
+    extract_text_with_cues,
+)
 from poc_istruzioni.llm.client import LlmClient
 
 PRICES = Prices(
@@ -31,6 +35,29 @@ def test_extract_marca_titolo_grande(tmp_path) -> None:
     lines = text.splitlines()
     assert any(line.startswith("〖H〗 ") and "QUADRO RP" in line for line in lines)
     assert any(line == "testo del corpo normale" for line in lines)
+
+
+def test_span_text_mappa_dingbat() -> None:
+    assert _span_text({"text": "n", "font": "ZapfDingbats"}) == "-"
+    assert _span_text({"text": "normale", "font": "Times"}) == "normale"
+
+
+def test_extract_strip_boilerplate_e_numero_pagina(tmp_path) -> None:
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "Header ripetuto", fontsize=10)
+    page.insert_text((72, 110), "contenuto del corpo", fontsize=10)
+    page.insert_text((72, 150), "42", fontsize=10)  # numero di pagina orfano
+    pdf = tmp_path / "d.pdf"
+    doc.save(str(pdf))
+    doc.close()
+
+    out = extract_text_with_cues(
+        fitz.open(pdf)[0], boilerplate={"Header ripetuto"}, page_number=42
+    )
+    assert "contenuto del corpo" in out
+    assert "Header ripetuto" not in out
+    assert "\n42" not in out and out.strip() != "42"
 
 
 class FakeMessages:

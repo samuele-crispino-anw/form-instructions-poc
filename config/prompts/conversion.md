@@ -7,9 +7,10 @@ REGOLE (vincolanti):
   percentuali, limiti, franchigie) esattamente come sono scritti.
 - Layout a 2 colonne: segui l'ordine di lettura naturale (prima l'intera colonna
   sinistra, poi la destra). Non mescolare le colonne.
-- Struttura con heading: usa `## ` per il quadro (es. "## QUADRO RP — Oneri e spese"),
-  `### ` per il rigo (es. "### Righi RP1-RP4 — Spese sanitarie"). Usa elenchi puntati
-  per i codici (es. "- **1** = ...").
+- Convenzione heading: `# ` per il titolo del documento (solo frontespizio), `## ` per
+  quadro/sezione (es. "## QUADRO RP — Oneri e spese"), `### ` per sotto-sezione/rigo
+  (es. "### Righi RP1-RP4 — Spese sanitarie"). Usa elenchi puntati per i codici (es. "- **1** = ...").
+- Per ogni tabella, premetti una riga "Colonne: <intestazioni originali>" prima di ristrutturarla.
 - Header e footer ripetuti di pagina (titolo corrente, numero di pagina, nome del
   modello in testa/piè): NON trascriverli.
 - Se vedi diciture palesemente estranee al contenuto della pagina (es. l'intestazione

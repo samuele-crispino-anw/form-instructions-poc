@@ -16,26 +16,43 @@ from poc_istruzioni.llm.client import LlmClient, LlmResult
 _HEADING_MARK = "〖H〗 "
 _BOLD_FLAG = 16  # bit dei flag span PyMuPDF: grassetto
 _HEADING_SIZE_RATIO = 1.15  # font > 1.15x del corpo => probabile titolo
+_DINGBAT_HINTS = ("Dingbat", "Wingding")  # font dei bullet: il glifo nel text-layer è spurio
 
 
-def extract_text_with_cues(page: fitz.Page) -> str:
-    """Testo della pagina in ordine di lettura; righe titolo/grassetto marcate con 〖H〗."""
+def _span_text(span: dict) -> str:
+    """Testo di uno span; i bullet ZapfDingbats (resi come glifo, es. 'n') diventano '-' (B.1)."""
+    if any(h in span.get("font", "") for h in _DINGBAT_HINTS):
+        return "-"
+    return span["text"]
+
+
+def extract_text_with_cues(
+    page: fitz.Page,
+    *,
+    boilerplate: frozenset[str] | set[str] = frozenset(),
+    page_number: int | None = None,
+) -> str:
+    """Testo della pagina in ordine di lettura, ripulito per la Rotta A (B.1).
+
+    - bullet ZapfDingbats -> '-'; - righe header/footer ripetute (boilerplate) rimosse PRIMA
+    dell'LLM; - riga orfana col solo numero di pagina rimossa; - titoli/grassetti marcati 〖H〗.
+    """
     data = page.get_text("dict")
 
-    # Dimensione del corpo = quella che copre più caratteri.
     sizes: Counter[int] = Counter()
     for block in data["blocks"]:
         for line in block.get("lines", []):
             for span in line.get("spans", []):
                 sizes[round(span["size"])] += len(span["text"])
     body = sizes.most_common(1)[0][0] if sizes else 0
+    page_str = str(page_number) if page_number is not None else None
 
     out: list[str] = []
     for block in data["blocks"]:
         for line in block.get("lines", []):
             spans = line.get("spans", [])
-            text = "".join(s["text"] for s in spans).strip()
-            if not text:
+            text = "".join(_span_text(s) for s in spans).strip()
+            if not text or text in boilerplate or text == page_str:
                 continue
             max_size = max(round(s["size"]) for s in spans)
             bold = any(s["flags"] & _BOLD_FLAG for s in spans)

@@ -8,9 +8,11 @@ il marcatore nell'output.
 REGOLE (vincolanti):
 - Fedeltà totale: NON riassumere, NON correggere, NON aggiungere, NON interpretare.
   Riporta i numeri (codici, importi, percentuali, limiti, franchigie) esattamente.
-- Struttura con heading: `## ` per il quadro (es. "## QUADRO RP — Oneri e spese"),
-  `### ` per il rigo (es. "### Righi RP1-RP4 — Spese sanitarie"). Elenchi puntati per
-  i codici (es. "- **1** = ...").
+- Convenzione heading: `# ` per il titolo del documento (solo frontespizio), `## ` per
+  quadro/sezione (es. "## QUADRO RP — Oneri e spese"), `### ` per sotto-sezione/rigo
+  (es. "### Righi RP1-RP4 — Spese sanitarie"). Elenchi puntati per i codici (es. "- **1** = ...").
+- Per ogni tabella, premetti una riga "Colonne: <intestazioni originali>" prima di
+  ristrutturarla, così da preservare l'header tabellare di origine.
 - Non inventare contenuto non presente nel testo. Se il testo è frammentario, trascrivi
   ciò che c'è senza completarlo.
 - Niente preamboli o commenti tuoi: SOLO il Markdown.
