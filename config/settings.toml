@@ -30,3 +30,8 @@ overlap_threshold = 0.6          # FR-B2: sotto soglia -> needs_review
 [routing]
 min_words_text_route = 5         # pagina con < N parole estraibili -> VLM
 # table_rects_force_vlm omesso = disattivato
+
+# Rafforzamenti del checksum (§M2): negazioni/vincoli persi e scambi di abbinamento codice.
+[gate]
+critical_words = ["non", "esclusi", "salvo", "tranne", "fino a", "almeno", "entro"]
+code_label_overlap_min = 0.5     # sotto questa soglia: possibile etichetta scambiata

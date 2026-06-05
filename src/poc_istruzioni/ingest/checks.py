@@ -102,6 +102,50 @@ def find_artifacts(text: str, artifacts: tuple[str, ...]) -> list[str]:
 # Artefatto noto del corpus PF1 2026 (testo-fantasma su almeno una pagina).
 DEFAULT_ARTIFACTS = ("REDDITI SC 2023",)
 
+# Parole la cui PERDITA ribalta il significato (negazioni, vincoli): §M2.2.
+DEFAULT_CRITICAL_WORDS = ("non", "esclusi", "salvo", "tranne", "fino a", "almeno", "entro")
+
+# Coppia "codice = etichetta" (tollera ** del markdown attorno al numero).
+_PAIR_RE = re.compile(r"(\d{1,3})\*{0,2}\s*=\s*([^\n;·|]+)")
+
+
+def extract_code_pairs(text: str) -> dict[str, str]:
+    """Estrae le coppie 'N = etichetta' (primo abbinamento per codice)."""
+    pairs: dict[str, str] = {}
+    for m in _PAIR_RE.finditer(text):
+        pairs.setdefault(m.group(1), m.group(2).strip())
+    return pairs
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 1.0
+    return len(a & b) / len(a | b)
+
+
+def code_pair_mismatches(vlm_md: str, pdf_text: str, *, label_overlap_min: float) -> list[str]:
+    """Codici presenti in entrambi ma con etichetta divergente (§M2.1, anti-scambio)."""
+    md_pairs = extract_code_pairs(vlm_md)
+    ref_pairs = extract_code_pairs(pdf_text)
+    out: list[str] = []
+    for code in sorted(set(md_pairs) & set(ref_pairs)):
+        ov = _jaccard(_tokens(md_pairs[code]), _tokens(ref_pairs[code]))
+        if ov < label_overlap_min:
+            out.append(f"codice {code}: etichetta divergente (overlap {ov:.2f})")
+    return out
+
+
+def critical_word_losses(vlm_md: str, pdf_text: str, words: tuple[str, ...]) -> list[str]:
+    """Parole critiche presenti meno volte nel markdown che nel riferimento (§M2.2)."""
+    md_low, ref_low = vlm_md.lower(), pdf_text.lower()
+    out: list[str] = []
+    for w in words:
+        pat = re.compile(r"\b" + re.escape(w.lower()) + r"\b")
+        cm, cr = len(pat.findall(md_low)), len(pat.findall(ref_low))
+        if cm < cr:
+            out.append(f"'{w}' perse: {cm} vs {cr}")
+    return out
+
 
 @dataclass
 class CheckReport:
@@ -123,6 +167,8 @@ class CheckReport:
     needs_review: bool
     reasons: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    code_pair_issues: list[str] = field(default_factory=list)
+    critical_losses: list[str] = field(default_factory=list)
 
 
 def run_checks(
@@ -134,12 +180,15 @@ def run_checks(
     coverage_min: float = 0.5,
     coverage_max: float = 2.0,
     artifacts: tuple[str, ...] = DEFAULT_ARTIFACTS,
+    page_number: int | None = None,
+    critical_words: tuple[str, ...] = DEFAULT_CRITICAL_WORDS,
+    code_label_overlap_min: float = 0.5,
 ) -> CheckReport:
-    """Esegue tutti i check A) e decide needs_review con le motivazioni.
+    """Esegue i check e decide needs_review con le motivazioni.
 
     `pdf_text` dovrebbe essere già ripulito da header/footer (vedi textlayer.strip_lines).
-    Gli artefatti noti vengono rimossi dal riferimento prima del confronto: una loro
-    corretta omissione nel markdown non deve risultare come "numero/contenuto mancante".
+    Gli artefatti noti vengono rimossi dal riferimento prima del confronto. Se `page_number`
+    è dato, il numero di pagina del footer non conta come numero di contenuto (§M1).
     """
     # Riferimento ripulito dagli artefatti noti (es. testo-fantasma "REDDITI SC 2023").
     pdf_clean = pdf_text
@@ -147,6 +196,8 @@ def run_checks(
         pdf_clean = pdf_clean.replace(a, "")
 
     pdf_nums = extract_numbers(pdf_clean)
+    if page_number is not None:  # §M1: il numero di pagina non è un numero di contenuto
+        pdf_nums.discard(str(page_number))
     vlm_nums = extract_numbers(vlm_md)
     missing = sorted(pdf_nums - vlm_nums)
     extra = sorted(vlm_nums - pdf_nums)
@@ -158,6 +209,10 @@ def run_checks(
     empty = is_empty_or_refusal(vlm_md)
     heading_issues = lint_headings(vlm_md)
     found_artifacts = find_artifacts(vlm_md, artifacts)
+    code_pair_issues = code_pair_mismatches(
+        vlm_md, pdf_clean, label_overlap_min=code_label_overlap_min
+    )
+    critical_losses = critical_word_losses(vlm_md, pdf_clean, critical_words)
 
     # Bloccanti: veri segnali di fedeltà (decidono needs_review/escalation).
     reasons: list[str] = []
@@ -171,6 +226,10 @@ def run_checks(
         reasons.append("ripetizione/degenerazione")
     if found_artifacts:
         reasons.append(f"artefatti nel markdown: {found_artifacts}")
+    if code_pair_issues:
+        reasons.append(f"abbinamenti codice divergenti: {code_pair_issues}")
+    if critical_losses:
+        reasons.append(f"parole critiche perse: {critical_losses}")
 
     # Non bloccanti: indizi informativi (rumorosi su questo corpus).
     warnings: list[str] = []
@@ -192,4 +251,6 @@ def run_checks(
         needs_review=bool(reasons),
         reasons=reasons,
         warnings=warnings,
+        code_pair_issues=code_pair_issues,
+        critical_losses=critical_losses,
     )

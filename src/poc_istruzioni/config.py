@@ -52,6 +52,14 @@ class Routing(BaseModel):
     table_rects_force_vlm: int | None = None  # omesso = disattivato
 
 
+class Gate(BaseModel):
+    """Rafforzamenti del checksum (Nota raffinamento §M2). Configurabili per documento."""
+
+    model_config = ConfigDict(extra="forbid")
+    critical_words: list[str]  # parole la cui perdita è bloccante (negazioni, vincoli)
+    code_label_overlap_min: float  # overlap minimo etichetta per coppia codice (anti-scambio)
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     paths: Paths
@@ -60,6 +68,7 @@ class Settings(BaseModel):
     rendering: Rendering
     crosscheck: Crosscheck
     routing: Routing
+    gate: Gate
 
     def model_for(self, scope: str) -> str:
         """Model id Anthropic per uno scopo (es. 'router', 'conversion')."""

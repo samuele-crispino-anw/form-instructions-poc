@@ -1,7 +1,9 @@
 """Test dei check automatici di qualità VLM (FR-B2, livello A)."""
 
 from poc_istruzioni.ingest.checks import (
+    code_pair_mismatches,
     coverage_ratio,
+    critical_word_losses,
     extract_numbers,
     find_artifacts,
     has_repetition,
@@ -86,6 +88,40 @@ def test_artefatto_nel_riferimento_non_conta_come_numero_mancante() -> None:
     rep = run_checks(vlm, pdf)
     assert "2023" not in rep.missing_numbers
     assert rep.needs_review is False
+
+
+def test_numero_di_pagina_escluso_dal_confronto() -> None:
+    # "75" è il numero di pagina nel footer del riferimento; il markdown lo omette.
+    pdf = "Righi RP1 RP4 codice 1 franchigia 129,11 spese sanitarie 75"
+    vlm = "### Righi RP1-RP4\ncodice 1 franchigia 129,11 spese sanitarie"
+    assert run_checks(vlm, pdf, page_number=75).needs_review is False
+    assert "75" in run_checks(vlm, pdf).missing_numbers  # senza page_number, sarebbe flaggato
+
+
+def test_pair_check_scambio_etichette() -> None:
+    ref = "1 = spese sanitarie; 2 = persone con disabilità"
+    swap = "- **1** = persone con disabilità\n- **2** = spese sanitarie"  # etichette invertite
+    issues = code_pair_mismatches(swap, ref, label_overlap_min=0.5)
+    assert any("codice 1" in i for i in issues)
+    ok = "- **1** = spese sanitarie\n- **2** = persone con disabilità"
+    assert code_pair_mismatches(ok, ref, label_overlap_min=0.5) == []
+
+
+def test_critical_word_negazione_persa() -> None:
+    ref = "le spese non sono deducibili salvo eccezioni"
+    vlm = "le spese sono deducibili salvo eccezioni"  # perso "non"
+    losses = critical_word_losses(vlm, ref, ("non", "salvo"))
+    assert any("'non'" in x for x in losses)
+    # "salvo" presente in entrambi -> non segnalato
+    assert not any("'salvo'" in x for x in losses)
+
+
+def test_pair_e_critical_sono_bloccanti_in_run_checks() -> None:
+    ref = "le spese non deducibili; 1 = sanitarie"
+    vlm = "le spese deducibili; **1** = altro completamente diverso"
+    rep = run_checks(vlm, ref, overlap_threshold=0.0, number_recall_threshold=0.0)
+    assert rep.needs_review is True
+    assert rep.critical_losses and rep.code_pair_issues
 
 
 def test_heading_e_copertura_sono_warning_non_bloccanti() -> None:
