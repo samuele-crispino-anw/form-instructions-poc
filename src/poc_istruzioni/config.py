@@ -109,3 +109,8 @@ def load_settings(path: Path | None = None) -> Settings:
 
 def load_prices(path: Path | None = None) -> Prices:
     return Prices.model_validate(_load_toml(path or _config_dir() / "prices.toml"))
+
+
+def load_prompt(name: str) -> str:
+    """Carica un prompt versionato da config/prompts/<name>.md (es. 'conversion')."""
+    return (_config_dir() / "prompts" / f"{name}.md").read_text(encoding="utf-8")
