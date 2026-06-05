@@ -29,6 +29,7 @@ def transcribe_page(
     page_n: int,
     max_tokens: int = 8000,
     query_id: str | None = None,
+    scopo: str | None = None,
 ) -> LlmResult:
     """Trascrive una pagina; ritorna l'LlmResult (testo markdown + costo + usage)."""
     messages = [
@@ -41,7 +42,7 @@ def transcribe_page(
         }
     ]
     return llm.complete(
-        scopo=f"conversion:p{page_n:03d}",
+        scopo=scopo or f"conversion:p{page_n:03d}",
         model=model,
         system=prompt,
         messages=messages,
