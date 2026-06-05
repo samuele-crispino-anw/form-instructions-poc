@@ -298,6 +298,52 @@ def measure_escalation(
         typer.echo("=> Zona grigia (15-30%): stop-point, decidere coi numeri")
 
 
+@ingest_app.command("convert")
+def ingest_convert(
+    pages: str = typer.Option(None, help="Pagine specifiche, es. '6,75'. Omesso = tutte."),
+    frm: int = typer.Option(None, "--from", help="Inizio range (incluso)."),
+    to: int = typer.Option(None, "--to", help="Fine range (incluso)."),
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+    pdf: str = typer.Option(None, help="Percorso PDF (default: corpus pilota)."),
+) -> None:
+    """Run di conversione: routing + escalation Graduata + audit + circuit breaker (a pagamento)."""
+    from poc_istruzioni.bootstrap import build_context, resolve_path
+    from poc_istruzioni.config import load_prompt
+    from poc_istruzioni.ingest.convert import convert_document
+    from poc_istruzioni.llm.client import LlmClient
+
+    ctx = build_context()
+    page_numbers = None
+    if pages or frm is not None:
+        page_numbers = _parse_pages(pages, frm, to)
+    pdf_path = resolve_path(pdf) if pdf else resolve_path(ctx.settings.paths.raw_dir) / _PILOT_PDF
+    if not pdf_path.exists():
+        raise typer.BadParameter(f"PDF non trovato: {pdf_path}")
+
+    n = len(page_numbers) if page_numbers else "tutte le"
+    typer.echo(f"Conversione {n} pagine (routing + escalation Graduata) ...")
+    summary = convert_document(
+        ctx.conn,
+        LlmClient(ctx.conn, ctx.prices, settings=ctx.settings),
+        doc_id=doc_id,
+        pdf_path=pdf_path,
+        pages_dir=resolve_path(ctx.settings.paths.pages_dir) / doc_id,
+        markdown_dir=resolve_path(ctx.settings.paths.markdown_dir),
+        settings=ctx.settings,
+        prompt_text=load_prompt("convert_text"),
+        prompt_vision=load_prompt("conversion"),
+        page_numbers=page_numbers,
+    )
+    typer.echo(
+        f"Fatto: {summary.pages} pagine (A={summary.route_a}, B={summary.route_b}); "
+        f"escalate {summary.escalated} ({100 * summary.escalated / max(1, summary.pages):.0f}%); "
+        f"da rivedere a mano {summary.needs_human}; gate-miss audit {summary.gate_misses}."
+    )
+    if summary.breaker_tripped:
+        typer.echo("CIRCUIT BREAKER attivato: default forte (Opus) per le pagine restanti.")
+    typer.echo(f"Costo run: ${summary.usd:.4f}")
+
+
 def _parse_pages(pages: str | None, frm: int | None, to: int | None) -> list[int]:
     if pages:
         return [int(x) for x in pages.split(",") if x.strip()]

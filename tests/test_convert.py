@@ -113,3 +113,59 @@ def test_route_b_usa_vlm(conn, tmp_path) -> None:
     assert out.status == "ok"
     assert out.route == "B"
     assert out.escalations == 0
+
+
+def test_audit_diff() -> None:
+    from poc_istruzioni.ingest.convert import _audit_diff
+
+    cw = ["non"]
+    assert _audit_diff("codice 1 importo 100", "codice 1 importo 100", cw) is False
+    assert _audit_diff("codice 1", "codice 1 importo 100", cw) is True  # numeri diversi
+    assert _audit_diff("spese non deducibili", "spese deducibili", cw) is True  # 'non' diverso
+
+
+class Echo:
+    """Per la Rotta A echeggia l'input (md fedele al testo pagina -> gate passa)."""
+
+    def create(self, **kw):
+        content = kw["messages"][0]["content"]
+        if isinstance(content, str):
+            text = "## QUADRO RP\n" + content.replace("〖H〗 ", "")
+        else:
+            text = GOOD
+        return SimpleNamespace(content=[SimpleNamespace(type="text", text=text)], usage=_usage())
+
+
+def test_convert_document_integrazione(conn, tmp_path) -> None:
+    import fitz
+
+    from poc_istruzioni.db.repositories import governance
+    from poc_istruzioni.ingest.convert import convert_document
+
+    # 2 pagine DISTINTE single_column (>=18 parole -> non anomalous, niente boilerplate spurio)
+    extra = "alfa beta gamma delta epsilon zeta eta theta iota kappa lambda mu"
+    bodies = [
+        f"codice 1 franchigia 129,11 spese sanitarie detrazione {extra}",
+        f"codice 2 detrazione spese universitarie mediche aliquota 19 per cento {extra}",
+    ]
+    doc = fitz.open()
+    for b in bodies:
+        doc.new_page().insert_textbox(fitz.Rect(50, 50, 540, 750), b, fontsize=11)
+    pdf = tmp_path / "d.pdf"
+    doc.save(str(pdf))
+    doc.close()
+
+    pages_dir = tmp_path / "pages"
+    pages_dir.mkdir()
+    for n in (1, 2):
+        (pages_dir / f"p{n:03d}.png").write_bytes(b"\x89PNGFAKE")
+
+    summary = convert_document(
+        conn, LlmClient(conn, PRICES, client=_fake(Echo())),
+        doc_id="PF1-2026", pdf_path=pdf, pages_dir=pages_dir, markdown_dir=tmp_path / "md",
+        settings=SETTINGS, prompt_text="PA", prompt_vision="PB",
+    )
+    assert summary.pages == 2
+    assert summary.route_a == 2 and summary.needs_human == 0
+    assert (tmp_path / "md" / "PF1-2026" / "pages" / "p001.md").exists()
+    assert governance(conn, "PF1-2026")["pages"] == 2
