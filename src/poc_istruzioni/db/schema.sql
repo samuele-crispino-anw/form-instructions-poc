@@ -71,6 +71,32 @@ CREATE TABLE IF NOT EXISTS llm_calls (
 CREATE INDEX IF NOT EXISTS idx_llm_calls_scopo ON llm_calls(scopo);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_query ON llm_calls(query_id);
 
+-- Conversione per pagina: rotta, modello finale, escalation, esito (Nota consolidata).
+CREATE TABLE IF NOT EXISTS conversions (
+    doc_id      TEXT NOT NULL,
+    n           INTEGER NOT NULL,
+    route       TEXT NOT NULL,              -- A | B
+    model_used  TEXT NOT NULL,              -- modello che ha prodotto l'output accettato/finale
+    escalations INTEGER NOT NULL DEFAULT 0, -- n. di gradini di escalation saliti
+    status      TEXT NOT NULL,              -- ok | needs_human
+    reasons     TEXT,                       -- motivi gate/lint dell'ultimo tentativo
+    md_path     TEXT,
+    usd         REAL NOT NULL DEFAULT 0,    -- costo totale della pagina (tutti i tentativi)
+    ts          TEXT NOT NULL,
+    PRIMARY KEY (doc_id, n)
+);
+
+-- Audit campionario (§M2.3/C): pagine Haiku ri-fatte con Opus e diffate.
+CREATE TABLE IF NOT EXISTS audits (
+    doc_id       TEXT NOT NULL,
+    n            INTEGER NOT NULL,
+    gate_flagged INTEGER NOT NULL,          -- il gate aveva flaggato la pagina?
+    diff_found   INTEGER NOT NULL,          -- il diff Haiku-vs-Opus ha trovato differenze?
+    gate_miss    INTEGER NOT NULL,          -- diff trovato MA gate non aveva flaggato = bug gate
+    ts           TEXT NOT NULL,
+    PRIMARY KEY (doc_id, n)
+);
+
 -- Evaluation (FR-E).
 CREATE TABLE IF NOT EXISTS eval_cases (
     id          TEXT PRIMARY KEY,

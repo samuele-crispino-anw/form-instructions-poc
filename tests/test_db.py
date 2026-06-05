@@ -6,12 +6,16 @@ import pytest
 
 from poc_istruzioni.db.connection import connect, init_db
 from poc_istruzioni.db.repositories import (
+    ConversionRow,
     Document,
     Page,
     get_document,
     get_pages,
+    governance,
+    insert_audit,
     insert_document,
     insert_page,
+    upsert_conversion,
 )
 
 
@@ -109,3 +113,27 @@ def test_insert_page_idempotente(conn) -> None:
     pages = get_pages(conn, "PF1-2026")
     assert len(pages) == 1
     assert pages[0].png_sha == "bb"
+
+
+def _conv(n, route="A", model="claude-haiku-4-5", esc=0, status="ok"):
+    return ConversionRow(
+        doc_id="PF1-2026", n=n, route=route, model_used=model, escalations=esc,
+        status=status, reasons=None, md_path=f"p{n:03d}.md", usd=0.01,
+        ts="2026-06-05T00:00:00+00:00",
+    )
+
+
+def test_governance(conn) -> None:
+    upsert_conversion(conn, _conv(2))  # A, no escalation
+    upsert_conversion(conn, _conv(3, esc=1, model="claude-opus-4-8"))  # A escalata
+    upsert_conversion(conn, _conv(1, route="B", model="claude-opus-4-8"))  # B
+    upsert_conversion(conn, _conv(4, esc=2, status="needs_human"))  # escalata, umano
+    insert_audit(conn, "PF1-2026", 2, gate_flagged=False, diff_found=True, gate_miss=True, ts="t")
+
+    g = governance(conn, "PF1-2026")
+    assert g["pages"] == 4
+    assert g["route_a"] == 3 and g["route_b"] == 1
+    assert g["escalated"] == 2  # p3 e p4
+    assert g["needs_human"] == 1
+    assert g["gate_misses"] == 1
+    assert g["escalation_rate"] == 0.5

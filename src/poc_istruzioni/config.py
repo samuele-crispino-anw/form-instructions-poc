@@ -67,6 +67,16 @@ class Lint(BaseModel):
     orphan_warn_strings: list[str]  # stringhe orfane note -> warning (es. "Agenzia Entrate")
 
 
+class Escalation(BaseModel):
+    """Catena di escalation Graduata (Nota consolidata §A). Per documento."""
+
+    model_config = ConfigDict(extra="forbid")
+    route_a_chain: list[str]  # scope modelli da provare in ordine sulla Rotta A
+    route_b_model: str  # scope del VLM (gradino-modello finale prima dell'umano)
+    audit_fraction: float  # frazione di pagine Rotta A ri-fatte con Opus (audit)
+    circuit_breaker: bool  # stop + default forte se l'audit trova un gate-miss
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     paths: Paths
@@ -77,6 +87,7 @@ class Settings(BaseModel):
     routing: Routing
     gate: Gate
     lint: Lint
+    escalation: Escalation
 
     def model_for(self, scope: str) -> str:
         """Model id Anthropic per uno scopo (es. 'router', 'conversion')."""

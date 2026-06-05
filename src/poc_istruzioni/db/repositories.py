@@ -107,6 +107,81 @@ def insert_page(conn: sqlite3.Connection, page: Page) -> None:
     conn.commit()
 
 
+@dataclass(frozen=True)
+class ConversionRow:
+    """Esito di conversione di una pagina (tabella `conversions`)."""
+
+    doc_id: str
+    n: int
+    route: str
+    model_used: str
+    escalations: int
+    status: str  # ok | needs_human
+    reasons: str | None
+    md_path: str | None
+    usd: float
+    ts: str
+
+
+def upsert_conversion(conn: sqlite3.Connection, row: ConversionRow) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO conversions "
+        "(doc_id, n, route, model_used, escalations, status, reasons, md_path, usd, ts) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            row.doc_id, row.n, row.route, row.model_used, row.escalations,
+            row.status, row.reasons, row.md_path, row.usd, row.ts,
+        ),
+    )
+    conn.commit()
+
+
+def insert_audit(
+    conn: sqlite3.Connection,
+    doc_id: str,
+    n: int,
+    *,
+    gate_flagged: bool,
+    diff_found: bool,
+    gate_miss: bool,
+    ts: str,
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO audits (doc_id, n, gate_flagged, diff_found, gate_miss, ts) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (doc_id, n, int(gate_flagged), int(diff_found), int(gate_miss), ts),
+    )
+    conn.commit()
+
+
+def governance(conn: sqlite3.Connection, doc_id: str) -> dict:
+    """Metriche di governance del run (FR-T2/D): rotte, escalation, esiti, audit."""
+    rows = conn.execute(
+        "SELECT route, escalations, status FROM conversions WHERE doc_id = ?", (doc_id,)
+    ).fetchall()
+    total = len(rows)
+    by_route = {"A": 0, "B": 0}
+    escalated = needs_human = 0
+    for r in rows:
+        by_route[r["route"]] = by_route.get(r["route"], 0) + 1
+        if r["escalations"] > 0:
+            escalated += 1
+        if r["status"] == "needs_human":
+            needs_human += 1
+    misses = conn.execute(
+        "SELECT COUNT(*) AS c FROM audits WHERE doc_id = ? AND gate_miss = 1", (doc_id,)
+    ).fetchone()["c"]
+    return {
+        "pages": total,
+        "route_a": by_route.get("A", 0),
+        "route_b": by_route.get("B", 0),
+        "escalated": escalated,
+        "escalation_rate": (escalated / total) if total else 0.0,
+        "needs_human": needs_human,
+        "gate_misses": misses,
+    }
+
+
 def update_page_status(
     conn: sqlite3.Connection,
     doc_id: str,

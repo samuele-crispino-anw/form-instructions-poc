@@ -15,6 +15,10 @@ compile    = "claude-opus-4-8"   # FR-D2: estrazione one-time DB ontologico
 router     = "claude-haiku-4-5"  # FR-B4: classificazione sezione
 answer     = "claude-haiku-4-5"  # FR-B6/FR-D4: generazione risposta runtime
 eval       = "claude-haiku-4-5"  # FR-E: LLM-judge
+# Tier per la conversione (Graduata): A economica (Haiku), A forte (Opus), B vision (Opus).
+route_a_economical = "claude-haiku-4-5"
+route_a_strong     = "claude-opus-4-8"
+route_b            = "claude-opus-4-8"
 
 [llm]
 max_tokens = 4096
@@ -39,3 +43,10 @@ code_label_overlap_min = 0.5     # sotto questa soglia: possibile etichetta scam
 # Lint d'igiene sul markdown (§B.2): i fail bloccano la pagina; stringhe orfane = warning.
 [lint]
 orphan_warn_strings = ["Agenzia delle Entrate", "Agenzia Entrate"]
+
+# Escalation Graduata (§A): catena Rotta A, poi VLM, poi umano; audit + circuit breaker.
+[escalation]
+route_a_chain = ["route_a_economical", "route_a_strong"]  # scope modelli (vedi [models])
+route_b_model = "route_b"        # VLM, ultimo gradino-modello prima dell'umano
+audit_fraction = 0.10            # frazione pagine Rotta A ri-fatte con Opus (audit M2.3)
+circuit_breaker = true           # stop+default forte se l'audit trova un gate-miss
