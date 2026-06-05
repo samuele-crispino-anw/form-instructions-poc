@@ -35,3 +35,7 @@ min_words_text_route = 5         # pagina con < N parole estraibili -> VLM
 [gate]
 critical_words = ["non", "esclusi", "salvo", "tranne", "fino a", "almeno", "entro"]
 code_label_overlap_min = 0.5     # sotto questa soglia: possibile etichetta scambiata
+
+# Lint d'igiene sul markdown (§B.2): i fail bloccano la pagina; stringhe orfane = warning.
+[lint]
+orphan_warn_strings = ["Agenzia delle Entrate", "Agenzia Entrate"]

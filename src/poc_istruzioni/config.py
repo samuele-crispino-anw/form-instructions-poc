@@ -60,6 +60,13 @@ class Gate(BaseModel):
     code_label_overlap_min: float  # overlap minimo etichetta per coppia codice (anti-scambio)
 
 
+class Lint(BaseModel):
+    """Lint d'igiene sul markdown generato (Nota consolidata §B.2). Per documento."""
+
+    model_config = ConfigDict(extra="forbid")
+    orphan_warn_strings: list[str]  # stringhe orfane note -> warning (es. "Agenzia Entrate")
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     paths: Paths
@@ -69,6 +76,7 @@ class Settings(BaseModel):
     crosscheck: Crosscheck
     routing: Routing
     gate: Gate
+    lint: Lint
 
     def model_for(self, scope: str) -> str:
         """Model id Anthropic per uno scopo (es. 'router', 'conversion')."""
