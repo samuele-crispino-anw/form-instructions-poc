@@ -52,10 +52,11 @@ def convert_text_to_markdown(
     prompt: str,
     page_n: int,
     max_tokens: int = 8000,
+    scopo: str = "spike:routeA",
 ) -> LlmResult:
-    """Converte il testo estratto in markdown via LLM (no vision). Purpose ledger: spike:routeA."""
+    """Converte il testo estratto in markdown via LLM (no vision). `scopo` per il ledger."""
     return llm.complete(
-        scopo="spike:routeA",
+        scopo=scopo,
         model=model,
         system=prompt,
         messages=[{"role": "user", "content": text}],

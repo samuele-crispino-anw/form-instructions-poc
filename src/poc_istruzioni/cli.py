@@ -231,6 +231,70 @@ def ingest_route(
         typer.echo(f"  p{page:03d} -> B: {reason}")
 
 
+@ingest_app.command("measure-escalation")
+def measure_escalation(
+    model: str = typer.Option("claude-haiku-4-5", help="Modello Rotta A da misurare."),
+    n: int = typer.Option(15, help="Numero di pagine single_column da campionare."),
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+    pdf: str = typer.Option(None, help="Percorso PDF (default: corpus pilota)."),
+) -> None:
+    """Nota §M3: misura il tasso di escalation E (% pagine bocciate dal gate) di un modello."""
+    import fitz
+
+    from poc_istruzioni.bootstrap import build_context, resolve_path
+    from poc_istruzioni.config import load_prompt
+    from poc_istruzioni.ingest.checks import run_gate_from_settings
+    from poc_istruzioni.ingest.layout import analyze_document
+    from poc_istruzioni.ingest.textlayer import (
+        extract_pages_text,
+        find_boilerplate_lines,
+        strip_lines,
+    )
+    from poc_istruzioni.ingest.textroute import convert_text_to_markdown, extract_text_with_cues
+    from poc_istruzioni.llm.client import LlmClient
+
+    ctx = build_context()
+    pdf_path = resolve_path(pdf) if pdf else resolve_path(ctx.settings.paths.raw_dir) / _PILOT_PDF
+    if not pdf_path.exists():
+        raise typer.BadParameter(f"PDF non trovato: {pdf_path}")
+
+    pages_text = extract_pages_text(pdf_path)
+    boiler = find_boilerplate_lines(pages_text)
+    single = sorted(
+        m.page for m in analyze_document(pdf_path) if m.classification == "single_column"
+    )
+    step = max(1, len(single) // n)
+    sample = single[::step][:n]
+
+    prompt = load_prompt("convert_text")
+    llm = LlmClient(ctx.conn, ctx.prices, settings=ctx.settings)
+    doc = fitz.open(pdf_path)
+
+    typer.echo(f"Misura escalation: {len(sample)} pagine single_column con {model} -> {sample}")
+    fails = 0
+    cost = 0.0
+    for p in sample:
+        res = convert_text_to_markdown(
+            llm, extract_text_with_cues(doc[p - 1]), model=model, prompt=prompt,
+            page_n=p, scopo="spike:haiku-escalation-rate",
+        )
+        cost += res.cost.usd
+        ref = strip_lines(pages_text[p - 1], boiler)
+        rep = run_gate_from_settings(res.text, ref, ctx.settings, page_number=p)
+        if rep.needs_review:
+            fails += 1
+            typer.echo(f"  p{p:03d} BOCCIATA: {rep.reasons}")
+
+    e = fails / len(sample) if sample else 0.0
+    typer.echo(f"\nE = {fails}/{len(sample)} = {100 * e:.0f}%  (costo misura ${cost:.4f})")
+    if e < 0.15:
+        typer.echo("=> Graduata (Haiku): E < 15%")
+    elif e > 0.30:
+        typer.echo("=> Sicura (Opus): E > 30%")
+    else:
+        typer.echo("=> Zona grigia (15-30%): stop-point, decidere coi numeri")
+
+
 def _parse_pages(pages: str | None, frm: int | None, to: int | None) -> list[int]:
     if pages:
         return [int(x) for x in pages.split(",") if x.strip()]

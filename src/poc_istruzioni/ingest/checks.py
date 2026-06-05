@@ -10,6 +10,10 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from poc_istruzioni.config import Settings
 
 # Token numerico: cifra seguita da cifre/separatori (importi, codici, percentuali, pagine).
 _NUM_RE = re.compile(r"\d[\d.,]*")
@@ -253,4 +257,18 @@ def run_checks(
         warnings=warnings,
         code_pair_issues=code_pair_issues,
         critical_losses=critical_losses,
+    )
+
+
+def run_gate_from_settings(
+    vlm_md: str, pdf_text: str, settings: Settings, *, page_number: int | None = None
+) -> CheckReport:
+    """Esegue il gate leggendo le soglie da config (usato da misura E e orchestratore)."""
+    return run_checks(
+        vlm_md,
+        pdf_text,
+        overlap_threshold=settings.crosscheck.overlap_threshold,
+        critical_words=tuple(settings.gate.critical_words),
+        code_label_overlap_min=settings.gate.code_label_overlap_min,
+        page_number=page_number,
     )
