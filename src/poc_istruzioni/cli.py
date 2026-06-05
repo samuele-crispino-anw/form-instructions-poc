@@ -188,6 +188,10 @@ def ingest_spike(
         build_spike_html(rows, out_dir, pages_dir), encoding="utf-8"
     )
 
+    failed = [n for n in sample if n not in {r.page for r in rows}]
+    if failed:
+        typer.echo(f"FALLITE (ritenta con --pages): {failed}")
+
     typer.echo("\nMedie per classe (A=testo, B=VLM):")
     typer.echo(f"  {'classe':<14} {'pag':>3} {'ovl_A':>6} {'ovl_B':>6} "
                f"{'num_A':>6} {'num_B':>6} {'$_A':>8} {'$_B':>8}")

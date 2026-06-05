@@ -81,20 +81,25 @@ def run_spike(
         for n in sample:
             ref = _strip_artifacts(ref_texts.get(n, ""), artifacts)
 
-            # Rotta A: text-layer -> markdown
-            t0 = perf_counter()
-            res_a = convert_text_to_markdown(
-                llm, extract_text_with_cues(doc[n - 1]), model=model, prompt=prompt_text, page_n=n
-            )
-            secs_a = perf_counter() - t0
-            (out_dir / "routeA" / f"p{n:03d}.md").write_text(res_a.text, encoding="utf-8")
+            try:
+                # Rotta A: text-layer -> markdown
+                t0 = perf_counter()
+                res_a = convert_text_to_markdown(
+                    llm, extract_text_with_cues(doc[n - 1]),
+                    model=model, prompt=prompt_text, page_n=n,
+                )
+                secs_a = perf_counter() - t0
 
-            # Rotta B: immagine -> markdown (VLM)
-            t0 = perf_counter()
-            res_b = transcribe_page(
-                llm, pages_dir / f"p{n:03d}.png", model=model, prompt=prompt_vision, page_n=n
-            )
-            secs_b = perf_counter() - t0
+                # Rotta B: immagine -> markdown (VLM)
+                t0 = perf_counter()
+                res_b = transcribe_page(
+                    llm, pages_dir / f"p{n:03d}.png", model=model, prompt=prompt_vision, page_n=n
+                )
+                secs_b = perf_counter() - t0
+            except Exception:  # noqa: BLE001 — resilienza: una pagina fallita non ferma lo spike
+                continue
+
+            (out_dir / "routeA" / f"p{n:03d}.md").write_text(res_a.text, encoding="utf-8")
             (out_dir / "routeB" / f"p{n:03d}.md").write_text(res_b.text, encoding="utf-8")
 
             ov_a, nr_a, h_a = _metrics(res_a.text, ref)
