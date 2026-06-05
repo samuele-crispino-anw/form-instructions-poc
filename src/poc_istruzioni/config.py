@@ -44,6 +44,14 @@ class Crosscheck(BaseModel):
     overlap_threshold: float
 
 
+class Routing(BaseModel):
+    """Regola di routing per-pagina (Rotta A=text-layer default, B=VLM). Soglie per documento."""
+
+    model_config = ConfigDict(extra="forbid")
+    min_words_text_route: int  # sotto questa soglia il text-layer è inutile -> VLM
+    table_rects_force_vlm: int | None = None  # omesso = disattivato
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     paths: Paths
@@ -51,6 +59,7 @@ class Settings(BaseModel):
     llm: LlmSettings
     rendering: Rendering
     crosscheck: Crosscheck
+    routing: Routing
 
     def model_for(self, scope: str) -> str:
         """Model id Anthropic per uno scopo (es. 'router', 'conversion')."""

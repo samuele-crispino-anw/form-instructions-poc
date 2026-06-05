@@ -24,3 +24,9 @@ dpi = 175                        # FR-B1: 150-200 DPI
 
 [crosscheck]
 overlap_threshold = 0.6          # FR-B2: sotto soglia -> needs_review
+
+# Routing per-pagina: default Rotta A (text-layer); VLM solo dove il text-layer è inutile.
+# Lo spike mostra che la Rotta A gestisce anche le table_heavy -> NON le forziamo a VLM.
+[routing]
+min_words_text_route = 5         # pagina con < N parole estraibili -> VLM
+# table_rects_force_vlm omesso = disattivato

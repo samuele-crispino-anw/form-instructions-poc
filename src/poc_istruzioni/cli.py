@@ -207,6 +207,30 @@ def ingest_spike(
     typer.echo(f"Review: {out_dir / 'spike_review.html'}")
 
 
+@ingest_app.command("route")
+def ingest_route(
+    pdf: str = typer.Option(None, help="Percorso PDF (default: corpus pilota)."),
+) -> None:
+    """Nota raffinamento §B: applica la regola di routing e mostra la distribuzione."""
+    from poc_istruzioni.bootstrap import resolve_path
+    from poc_istruzioni.config import load_settings
+    from poc_istruzioni.ingest.layout import analyze_document
+    from poc_istruzioni.ingest.routing import route_all
+
+    settings = load_settings()
+    pdf_path = resolve_path(pdf) if pdf else resolve_path(settings.paths.raw_dir) / _PILOT_PDF
+    if not pdf_path.exists():
+        raise typer.BadParameter(f"PDF non trovato: {pdf_path}")
+
+    decisions = route_all(analyze_document(pdf_path), settings.routing)
+    a = sum(1 for _, d in decisions if d.route == "A")
+    b = [(m.page, d.reason) for m, d in decisions if d.route == "B"]
+    total = len(decisions)
+    typer.echo(f"{total} pagine instradate: Rotta A (testo) {a} · Rotta B (VLM) {len(b)}")
+    for page, reason in b:
+        typer.echo(f"  p{page:03d} -> B: {reason}")
+
+
 def _parse_pages(pages: str | None, frm: int | None, to: int | None) -> list[int]:
     if pages:
         return [int(x) for x in pages.split(",") if x.strip()]
