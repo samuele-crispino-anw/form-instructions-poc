@@ -18,6 +18,14 @@ def test_pagina_normale_va_in_A() -> None:
     assert d.route == "A"
 
 
+def test_anomalous_va_in_B() -> None:
+    m = _m(300, 10)
+    m = LayoutMetrics(**{**m.__dict__, "classification": "anomalous"})
+    d = route(m, Routing(min_words_text_route=5))
+    assert d.route == "B"
+    assert "anomalous" in d.reason
+
+
 def test_pagina_quasi_vuota_va_in_B() -> None:
     d = route(_m(2, 0), Routing(min_words_text_route=5))
     assert d.route == "B"

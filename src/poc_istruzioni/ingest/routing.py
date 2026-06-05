@@ -21,7 +21,14 @@ class RouteDecision:
 
 
 def route(metrics: LayoutMetrics, cfg: Routing) -> RouteDecision:
-    """Sceglie la rotta per una pagina dalle sue metriche di layout."""
+    """Sceglie la rotta per una pagina dalle sue metriche di layout.
+
+    B.3: le pagine `anomalous` (text-layer inaffidabile, es. testo-fantasma promosso a
+    identità) vanno al VLM. Altrimenti Rotta A; gli slip stocastici di Haiku li gestisce
+    il gate+escalation (A.2 per densità è stata scartata: non separa i fallimenti).
+    """
+    if metrics.classification == "anomalous":
+        return RouteDecision("B", "classe anomalous (text-layer inaffidabile)")
     if metrics.n_words < cfg.min_words_text_route:
         return RouteDecision(
             "B", f"text-layer scarso (n_words={metrics.n_words} < {cfg.min_words_text_route})"
