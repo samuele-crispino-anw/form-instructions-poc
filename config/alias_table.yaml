@@ -1,0 +1,12 @@
+# FR-B4: alias-table curata. Termine colloquiale -> sezione (quadro).
+# Match deterministico, versionato, modificabile senza toccare codice.
+# Popolata in Fase 2; qui un seme di esempio per il quadro pilota RP.
+aliases:
+  - term: spese sanitarie
+    quadro: RP
+  - term: farmacia
+    quadro: RP
+  - term: ticket
+    quadro: RP
+  - term: occhiali
+    quadro: RP

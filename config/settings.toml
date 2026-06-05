@@ -1,0 +1,26 @@
+# Configurazione runtime del PoC. Modificabile senza toccare codice.
+
+[paths]
+data_dir = "data"
+raw_dir = "data/raw"
+pages_dir = "data/pages"
+markdown_dir = "data/markdown"
+db_path = "data/poc.db"
+
+# Modello Anthropic per scopo (FR-T2 traccia per scopo).
+# Opus-class per i compiti one-time costosi; Haiku-class per router/runtime.
+[models]
+conversion = "claude-opus-4-8"   # FR-B2: trascrizione VLM pagina->markdown
+compile    = "claude-opus-4-8"   # FR-D2: estrazione one-time DB ontologico
+router     = "claude-haiku-4-5"  # FR-B4: classificazione sezione
+answer     = "claude-haiku-4-5"  # FR-B6/FR-D4: generazione risposta runtime
+eval       = "claude-haiku-4-5"  # FR-E: LLM-judge
+
+[llm]
+max_tokens = 4096
+
+[rendering]
+dpi = 175                        # FR-B1: 150-200 DPI
+
+[crosscheck]
+overlap_threshold = 0.6          # FR-B2: sotto soglia -> needs_review

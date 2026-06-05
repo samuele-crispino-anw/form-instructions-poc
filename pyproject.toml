@@ -1,0 +1,41 @@
+[project]
+name = "poc-istruzioni-qa"
+version = "0.1.0"
+description = "Assistente Q&A sulla compilazione dei modelli dichiarativi (Redditi PF) con citazioni verificabili"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40",      # LlmClient (FR-T2) — unico accesso ai modelli
+    "pydantic>=2",          # validazione config e schemi (FR-D1)
+    "typer>=0.12",          # CLI (ask / trace / report / eval)
+    "structlog>=24",        # logging strutturato
+    "pyyaml>=6",            # alias-table e golden set come dati (FR-B4/FR-E1)
+    "pymupdf>=1.24",        # rendering pagine PDF -> PNG (FR-B1)
+]
+
+[project.scripts]
+poc = "poc_istruzioni.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/poc_istruzioni"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
