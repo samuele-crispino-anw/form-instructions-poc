@@ -43,7 +43,7 @@ def test_report_costs_totale(tmp_path, monkeypatch) -> None:
     res = runner.invoke(app, ["report", "costs"])
     assert res.exit_code == 0
     assert "TOTALE" in res.stdout
-    assert "3.0000" in res.stdout  # somma USD
+    assert "3.000000" in res.stdout  # somma USD (6 decimali)
 
 
 def test_report_costs_per_scopo(tmp_path, monkeypatch) -> None:
