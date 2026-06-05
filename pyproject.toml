@@ -11,6 +11,7 @@ dependencies = [
     "structlog>=24",        # logging strutturato
     "pyyaml>=6",            # alias-table e golden set come dati (FR-B4/FR-E1)
     "pymupdf>=1.24",        # rendering pagine PDF -> PNG (FR-B1)
+    "pdfplumber>=0.11",    # analisi layout: words bbox, lines/rects (densità tabellare)
 ]
 
 [project.scripts]
