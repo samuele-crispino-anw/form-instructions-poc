@@ -62,10 +62,13 @@ def render_document(
 
 @dataclass
 class BatchSummary:
-    """Riepilogo di un batch di trascrizione: pagine, da rivedere, costo, review."""
+    """Riepilogo di un batch di trascrizione."""
 
-    pages: int
+    pages: int  # pagine finite nella review (trascritte + riusate)
+    transcribed: int  # chiamate VLM nuove in questo run
+    skipped: int  # pagine già presenti, riusate senza costo
     needs_review: int
+    failed: list[int]  # pagine fallite (es. 529), da ritentare
     review_path: Path
     usd: float
     eur: float
@@ -84,9 +87,13 @@ def transcribe_pages(
     prompt: str,
     review_path: Path | str,
     title: str,
+    skip_existing: bool = True,
 ) -> BatchSummary:
-    """Trascrive le pagine indicate, esegue i check, persiste e genera la review HTML.
+    """Trascrive le pagine, esegue i check, persiste e genera la review HTML.
 
+    Idempotente: con `skip_existing` salta (senza costo) le pagine il cui markdown
+    esiste già. Resiliente: un errore su una pagina (es. 529) non interrompe il batch;
+    la pagina va in `failed` e si ritenta in un run successivo.
     `ref_texts`: testo PDF di riferimento per pagina (già ripulito da header/footer).
     """
     pages_dir = Path(pages_dir)
@@ -94,15 +101,30 @@ def transcribe_pages(
     md_dir.mkdir(parents=True, exist_ok=True)
 
     items: list[ReviewItem] = []
+    failed: list[int] = []
     usd = eur = 0.0
-    n_review = 0
+    n_review = transcribed = skipped = 0
 
     for n in page_numbers:
         image_path = pages_dir / f"p{n:03d}.png"
-        res = transcribe_page(llm, image_path, model=model, prompt=prompt, page_n=n)
-        (md_dir / f"p{n:03d}.md").write_text(res.text, encoding="utf-8")
+        md_file = md_dir / f"p{n:03d}.md"
 
-        report = run_checks(res.text, ref_texts.get(n, ""))
+        if skip_existing and md_file.exists():
+            text = md_file.read_text(encoding="utf-8")
+            skipped += 1
+        else:
+            try:
+                res = transcribe_page(llm, image_path, model=model, prompt=prompt, page_n=n)
+            except Exception:  # noqa: BLE001 — resilienza batch: isola il fallimento di pagina
+                failed.append(n)
+                continue
+            text = res.text
+            md_file.write_text(text, encoding="utf-8")
+            usd += res.cost.usd
+            eur += res.cost.eur
+            transcribed += 1
+
+        report = run_checks(text, ref_texts.get(n, ""))
         update_page_status(
             conn,
             doc_id,
@@ -111,15 +133,16 @@ def transcribe_pages(
             overlap_score=report.overlap,
             needs_review=report.needs_review,
         )
-        items.append(ReviewItem(page_n=n, image_path=image_path, vlm_md=res.text, report=report))
-        usd += res.cost.usd
-        eur += res.cost.eur
+        items.append(ReviewItem(page_n=n, image_path=image_path, vlm_md=text, report=report))
         n_review += int(report.needs_review)
 
     write_review_html(review_path, title, items)
     return BatchSummary(
         pages=len(items),
+        transcribed=transcribed,
+        skipped=skipped,
         needs_review=n_review,
+        failed=failed,
         review_path=Path(review_path),
         usd=usd,
         eur=eur,

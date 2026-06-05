@@ -105,6 +105,7 @@ def ingest_transcribe(
     doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
     pdf: str = typer.Option(None, help="Percorso PDF (default: corpus pilota)."),
     title: str = typer.Option("Trascrizione VLM", help="Titolo della review."),
+    force: bool = typer.Option(False, "--force", help="Ritrascrivi anche le pagine già presenti."),
 ) -> None:
     """FR-B2: trascrive pagine con il VLM, esegue i check e genera la review HTML.
 
@@ -149,11 +150,16 @@ def ingest_transcribe(
         prompt=load_prompt("conversion"),
         review_path=review_path,
         title=title,
+        skip_existing=not force,
     )
     typer.echo(
-        f"OK: {summary.pages} pagine, {summary.needs_review} da rivedere. "
-        f"Costo: ${summary.usd:.4f} / €{summary.eur:.4f}"
+        f"OK: {summary.pages} in review "
+        f"(trascritte {summary.transcribed}, riusate {summary.skipped}, "
+        f"da rivedere {summary.needs_review}). "
+        f"Costo run: ${summary.usd:.4f} / €{summary.eur:.4f}"
     )
+    if summary.failed:
+        typer.echo(f"FALLITE (da ritentare): {summary.failed}")
     typer.echo(f"Review: {summary.review_path}")
 
 

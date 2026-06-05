@@ -93,3 +93,84 @@ def test_transcribe_pages_orchestrazione(conn, tmp_path) -> None:
     assert by_n[1].vlm_status == "ok"
     assert by_n[2].vlm_status == "needs_review"
     assert by_n[2].needs_review is True
+
+
+def _setup_one_page(conn, tmp_path):
+    insert_document(
+        conn,
+        Document(id="PF1-2026", modello="m", edizione="2026", periodo_imposta="2025",
+                 sha256="x", path="p.pdf"),
+    )
+    pages_dir = tmp_path / "pages"
+    pages_dir.mkdir()
+    (pages_dir / "p001.png").write_bytes(b"\x89PNGFAKE")
+    insert_page(conn, Page(doc_id="PF1-2026", n=1, png_path="p001.png", png_sha="s"))
+    return pages_dir
+
+
+def test_skip_existing_non_richiama_ne_addebita(conn, tmp_path) -> None:
+    pages_dir = _setup_one_page(conn, tmp_path)
+    # markdown già presente -> deve essere riusato, niente chiamata
+    md_dir = tmp_path / "md" / "PF1-2026" / "pages"
+    md_dir.mkdir(parents=True)
+    (md_dir / "p001.md").write_text("## QUADRO RP codice 1", encoding="utf-8")
+
+    summary = transcribe_pages(
+        conn, LlmClient(conn, PRICES, client=FakeAnthropic()),
+        doc_id="PF1-2026", page_numbers=[1], pages_dir=pages_dir,
+        markdown_dir=tmp_path / "md", ref_texts={1: "QUADRO RP codice 1"},
+        model="claude-opus-4-8", prompt="P",
+        review_path=tmp_path / "r.html", title="T",
+    )
+    assert summary.transcribed == 0
+    assert summary.skipped == 1
+    assert summary.usd == 0.0
+    assert summary.pages == 1  # comunque presente in review
+
+
+class FlakyMessages:
+    """Solleva alla prima create, poi risponde (simula un 529 transitorio)."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def create(self, **kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("Overloaded 529")
+        return SimpleNamespace(
+            content=[SimpleNamespace(type="text", text="## QUADRO RP codice 1")],
+            usage=SimpleNamespace(input_tokens=1000, output_tokens=200,
+                                  cache_read_input_tokens=0, cache_creation_input_tokens=0),
+        )
+
+
+class FlakyAnthropic:
+    def __init__(self):
+        self.messages = FlakyMessages()
+
+
+def test_errore_pagina_isolato_non_interrompe_batch(conn, tmp_path) -> None:
+    insert_document(
+        conn,
+        Document(id="PF1-2026", modello="m", edizione="2026", periodo_imposta="2025",
+                 sha256="x", path="p.pdf"),
+    )
+    pages_dir = tmp_path / "pages"
+    pages_dir.mkdir()
+    for n in (1, 2):
+        (pages_dir / f"p{n:03d}.png").write_bytes(b"\x89PNGFAKE")
+        insert_page(conn, Page(doc_id="PF1-2026", n=n, png_path=f"p{n:03d}.png", png_sha="s"))
+
+    summary = transcribe_pages(
+        conn, LlmClient(conn, PRICES, client=FlakyAnthropic()),
+        doc_id="PF1-2026", page_numbers=[1, 2], pages_dir=pages_dir,
+        markdown_dir=tmp_path / "md", ref_texts={1: "x", 2: "QUADRO RP codice 1"},
+        model="claude-opus-4-8", prompt="P",
+        review_path=tmp_path / "r.html", title="T",
+    )
+    # pagina 1 fallita (isolata), pagina 2 riuscita; review comunque generata
+    assert summary.failed == [1]
+    assert summary.transcribed == 1
+    assert summary.pages == 1
+    assert summary.review_path.exists()

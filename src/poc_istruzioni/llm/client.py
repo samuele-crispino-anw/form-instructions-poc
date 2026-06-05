@@ -52,6 +52,7 @@ class LlmClient:
         *,
         client: Any | None = None,
         settings: Settings | None = None,
+        max_retries: int = 5,
     ) -> None:
         self._conn = conn
         self._prices = prices
@@ -59,7 +60,8 @@ class LlmClient:
         if client is None:
             import anthropic  # import pigro: non richiede API key finché non si chiama
 
-            client = anthropic.Anthropic()
+            # max_retries: l'SDK ritenta con backoff esponenziale su 429/5xx/529 (overloaded).
+            client = anthropic.Anthropic(max_retries=max_retries)
         self._client = client
 
     def _build_system(self, system: str | list[dict], cache_ttl: str) -> list[dict]:
