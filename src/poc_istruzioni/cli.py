@@ -125,6 +125,84 @@ def ingest_layout(
     typer.echo(f"\nCSV: {out}")
 
 
+# Campione stratificato di default per lo spike (copre tutte le classi di layout):
+# single_column: 6,62,75,146,180 · table_heavy: 4,73,117,181 · anomalous: 1
+_SPIKE_SAMPLE = "1,4,6,62,73,75,117,146,180,181"
+
+
+@ingest_app.command("spike")
+def ingest_spike(
+    pages: str = typer.Option(_SPIKE_SAMPLE, help="Pagine del campione, es. '1,4,75'."),
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+    pdf: str = typer.Option(None, help="Percorso PDF (default: corpus pilota)."),
+) -> None:
+    """Nota strategica §3: spike comparativo Rotta A (testo) vs B (VLM) sul campione.
+
+    Effettua chiamate a pagamento (entrambe le rotte). Richiede ANTHROPIC_API_KEY.
+    """
+    from poc_istruzioni.bootstrap import build_context, resolve_path
+    from poc_istruzioni.config import load_prompt
+    from poc_istruzioni.ingest.layout import analyze_document
+    from poc_istruzioni.ingest.spike import (
+        build_spike_html,
+        run_spike,
+        summarize_by_class,
+        write_spike_csv,
+    )
+    from poc_istruzioni.ingest.textlayer import (
+        extract_pages_text,
+        find_boilerplate_lines,
+        strip_lines,
+    )
+    from poc_istruzioni.llm.client import LlmClient
+
+    ctx = build_context()
+    sample = [int(x) for x in pages.split(",") if x.strip()]
+    pdf_path = resolve_path(pdf) if pdf else resolve_path(ctx.settings.paths.raw_dir) / _PILOT_PDF
+    if not pdf_path.exists():
+        raise typer.BadParameter(f"PDF non trovato: {pdf_path}")
+
+    pages_text = extract_pages_text(pdf_path)
+    boiler = find_boilerplate_lines(pages_text)
+    ref_texts = {n: strip_lines(pages_text[n - 1], boiler) for n in sample}
+    klass_by_page = {m.page: m.classification for m in analyze_document(pdf_path)}
+
+    out_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "spike"
+    pages_dir = resolve_path(ctx.settings.paths.pages_dir) / doc_id
+
+    typer.echo(f"Spike A vs B su {len(sample)} pagine: {sample} ...")
+    rows = run_spike(
+        LlmClient(ctx.conn, ctx.prices, settings=ctx.settings),
+        pdf_path,
+        sample=sample,
+        klass_by_page=klass_by_page,
+        ref_texts=ref_texts,
+        pages_dir=pages_dir,
+        out_dir=out_dir,
+        model=ctx.settings.model_for("conversion"),
+        prompt_text=load_prompt("convert_text"),
+        prompt_vision=load_prompt("conversion"),
+    )
+    write_spike_csv(rows, out_dir / "spike_results.csv")
+    (out_dir / "spike_review.html").write_text(
+        build_spike_html(rows, out_dir, pages_dir), encoding="utf-8"
+    )
+
+    typer.echo("\nMedie per classe (A=testo, B=VLM):")
+    typer.echo(f"  {'classe':<14} {'pag':>3} {'ovl_A':>6} {'ovl_B':>6} "
+               f"{'num_A':>6} {'num_B':>6} {'$_A':>8} {'$_B':>8}")
+    for klass, s in summarize_by_class(rows).items():
+        typer.echo(
+            f"  {klass:<14} {int(s['pages']):>3} {s['overlap_a']:>6.2f} {s['overlap_b']:>6.2f} "
+            f"{s['numrec_a']:>6.2f} {s['numrec_b']:>6.2f} {s['cost_a']:>8.4f} {s['cost_b']:>8.4f}"
+        )
+    tot_a = sum(r.cost_a for r in rows)
+    tot_b = sum(r.cost_b for r in rows)
+    typer.echo(f"\nCosto spike: A ${tot_a:.4f} + B ${tot_b:.4f} = ${tot_a + tot_b:.4f}")
+    typer.echo(f"CSV: {out_dir / 'spike_results.csv'}")
+    typer.echo(f"Review: {out_dir / 'spike_review.html'}")
+
+
 def _parse_pages(pages: str | None, frm: int | None, to: int | None) -> list[int]:
     if pages:
         return [int(x) for x in pages.split(",") if x.strip()]
