@@ -20,4 +20,4 @@ write_1h_multiplier = 2.00
 # Conversione USD->EUR per i report in € (FR-T2). I listini Anthropic sono in USD.
 # PLACEHOLDER: imposta il tasso reale (e aggiorna `updated` sopra).
 [currency]
-usd_to_eur = 0.92
+usd_to_eur = 0.87
