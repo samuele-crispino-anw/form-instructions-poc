@@ -76,11 +76,17 @@ class CachePricing(BaseModel):
     write_1h_multiplier: float
 
 
+class Currency(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    usd_to_eur: float
+
+
 class Prices(BaseModel):
     model_config = ConfigDict(extra="forbid")
     updated: str
     models: dict[str, ModelPrice]
     cache: CachePricing
+    currency: Currency
 
     def for_model(self, model_id: str) -> ModelPrice:
         try:

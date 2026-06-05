@@ -16,3 +16,8 @@ output_per_mtok = 5.00
 read_multiplier = 0.10
 write_5m_multiplier = 1.25
 write_1h_multiplier = 2.00
+
+# Conversione USD->EUR per i report in € (FR-T2). I listini Anthropic sono in USD.
+# PLACEHOLDER: imposta il tasso reale (e aggiorna `updated` sopra).
+[currency]
+usd_to_eur = 0.92
