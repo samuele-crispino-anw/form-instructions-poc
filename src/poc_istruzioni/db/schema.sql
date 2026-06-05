@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS answer_traces (
     trace_json TEXT NOT NULL
 );
 
--- Ledger: una riga per ogni chiamata LLM (FR-T2). eur nella valuta configurata.
+-- Ledger: una riga per ogni chiamata LLM (FR-T2). usd = costo nativo, eur = convertito.
 CREATE TABLE IF NOT EXISTS llm_calls (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     ts          TEXT NOT NULL,
@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     tok_out     INTEGER NOT NULL DEFAULT 0,
     tok_cache_r INTEGER NOT NULL DEFAULT 0,
     tok_cache_w INTEGER NOT NULL DEFAULT 0,
+    usd         REAL NOT NULL DEFAULT 0,
     eur         REAL NOT NULL DEFAULT 0,
     query_id    TEXT                         -- opzionale: lega la chiamata a una query
 );
