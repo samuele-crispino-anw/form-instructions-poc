@@ -107,6 +107,24 @@ def insert_page(conn: sqlite3.Connection, page: Page) -> None:
     conn.commit()
 
 
+def update_page_status(
+    conn: sqlite3.Connection,
+    doc_id: str,
+    n: int,
+    *,
+    vlm_status: str,
+    overlap_score: float,
+    needs_review: bool,
+) -> None:
+    """Aggiorna l'esito della trascrizione VLM su una pagina già renderizzata (FR-B2)."""
+    conn.execute(
+        "UPDATE pages SET vlm_status = ?, overlap_score = ?, needs_review = ? "
+        "WHERE doc_id = ? AND n = ?",
+        (vlm_status, overlap_score, int(needs_review), doc_id, n),
+    )
+    conn.commit()
+
+
 def get_pages(conn: sqlite3.Connection, doc_id: str) -> list[Page]:
     rows = conn.execute(
         "SELECT * FROM pages WHERE doc_id = ? ORDER BY n", (doc_id,)

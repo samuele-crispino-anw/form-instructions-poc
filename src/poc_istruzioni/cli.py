@@ -89,6 +89,74 @@ def ingest_render(
     typer.echo(f"OK: {n} pagine renderizzate e registrate (doc_id={doc_id}).")
 
 
+def _parse_pages(pages: str | None, frm: int | None, to: int | None) -> list[int]:
+    if pages:
+        return [int(x) for x in pages.split(",") if x.strip()]
+    if frm is not None and to is not None:
+        return list(range(frm, to + 1))
+    raise typer.BadParameter("specifica --pages '54,99' oppure --from/--to")
+
+
+@ingest_app.command("transcribe")
+def ingest_transcribe(
+    pages: str = typer.Option(None, help="Pagine specifiche, es. '54,99,120'."),
+    frm: int = typer.Option(None, "--from", help="Inizio range (incluso)."),
+    to: int = typer.Option(None, "--to", help="Fine range (incluso)."),
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+    pdf: str = typer.Option(None, help="Percorso PDF (default: corpus pilota)."),
+    title: str = typer.Option("Trascrizione VLM", help="Titolo della review."),
+) -> None:
+    """FR-B2: trascrive pagine con il VLM, esegue i check e genera la review HTML.
+
+    Effettua chiamate a pagamento (modello 'conversion' da settings). Richiede ANTHROPIC_API_KEY.
+    """
+    from poc_istruzioni.bootstrap import build_context, resolve_path
+    from poc_istruzioni.config import load_prompt
+    from poc_istruzioni.ingest.pipeline import transcribe_pages
+    from poc_istruzioni.ingest.textlayer import (
+        extract_pages_text,
+        find_boilerplate_lines,
+        strip_lines,
+    )
+    from poc_istruzioni.llm.client import LlmClient
+
+    ctx = build_context()
+    page_list = _parse_pages(pages, frm, to)
+    pdf_path = resolve_path(pdf) if pdf else resolve_path(ctx.settings.paths.raw_dir) / _PILOT_PDF
+    if not pdf_path.exists():
+        raise typer.BadParameter(f"PDF non trovato: {pdf_path}")
+
+    # Testo di riferimento per pagina (text-layer ripulito da header/footer).
+    pages_text = extract_pages_text(pdf_path)
+    boiler = find_boilerplate_lines(pages_text)
+    ref_texts = {n: strip_lines(pages_text[n - 1], boiler) for n in page_list}
+
+    model = ctx.settings.model_for("conversion")
+    pages_dir = resolve_path(ctx.settings.paths.pages_dir) / doc_id
+    tag = f"{min(page_list):03d}-{max(page_list):03d}"
+    review_path = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "reviews" / f"{tag}.html"
+
+    typer.echo(f"Trascrivo {len(page_list)} pagine con {model} (pagine: {page_list}) ...")
+    summary = transcribe_pages(
+        ctx.conn,
+        LlmClient(ctx.conn, ctx.prices, settings=ctx.settings),
+        doc_id=doc_id,
+        page_numbers=page_list,
+        pages_dir=pages_dir,
+        markdown_dir=resolve_path(ctx.settings.paths.markdown_dir),
+        ref_texts=ref_texts,
+        model=model,
+        prompt=load_prompt("conversion"),
+        review_path=review_path,
+        title=title,
+    )
+    typer.echo(
+        f"OK: {summary.pages} pagine, {summary.needs_review} da rivedere. "
+        f"Costo: ${summary.usd:.4f} / €{summary.eur:.4f}"
+    )
+    typer.echo(f"Review: {summary.review_path}")
+
+
 @app.command()
 def smoke(
     scope: str = typer.Option("router", help="Scopo->modello da settings.toml [models]."),
