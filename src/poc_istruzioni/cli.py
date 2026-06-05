@@ -89,6 +89,42 @@ def ingest_render(
     typer.echo(f"OK: {n} pagine renderizzate e registrate (doc_id={doc_id}).")
 
 
+@ingest_app.command("layout")
+def ingest_layout(
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+    pdf: str = typer.Option(None, help="Percorso PDF (default: corpus pilota)."),
+) -> None:
+    """Nota strategica §2: analizza il layout di tutte le pagine e scrive layout_analysis.csv."""
+    from poc_istruzioni.bootstrap import resolve_path
+    from poc_istruzioni.config import load_settings
+    from poc_istruzioni.ingest.layout import analyze_document, summarize, write_csv
+
+    settings = load_settings()
+    pdf_path = resolve_path(pdf) if pdf else resolve_path(settings.paths.raw_dir) / _PILOT_PDF
+    if not pdf_path.exists():
+        raise typer.BadParameter(f"PDF non trovato: {pdf_path}")
+
+    typer.echo(f"Analisi layout di {pdf_path.name} ...")
+    metrics = analyze_document(pdf_path)
+    out = resolve_path(settings.paths.markdown_dir) / doc_id / "layout_analysis.csv"
+    write_csv(metrics, out)
+
+    counts = summarize(metrics)
+    total = len(metrics)
+    typer.echo(f"\n{total} pagine analizzate. Distribuzione classi:")
+    for cls, n in counts.items():
+        pct = 100 * n / total if total else 0
+        typer.echo(f"  {cls:<14} {n:>4}  ({pct:.1f}%)")
+
+    anomalous = [m.page for m in metrics if m.classification == "anomalous"]
+    table = [m.page for m in metrics if m.classification == "table_heavy"]
+    multi = [m.page for m in metrics if m.classification == "multi_column"]
+    typer.echo(f"\nmulti_column: {multi}")
+    typer.echo(f"table_heavy:  {table}")
+    typer.echo(f"anomalous:    {anomalous}")
+    typer.echo(f"\nCSV: {out}")
+
+
 def _parse_pages(pages: str | None, frm: int | None, to: int | None) -> list[int]:
     if pages:
         return [int(x) for x in pages.split(",") if x.strip()]
