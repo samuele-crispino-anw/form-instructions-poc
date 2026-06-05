@@ -14,6 +14,12 @@ app = typer.Typer(
 report_app = typer.Typer(help="Contabilità chiamate e costi (FR-T2).")
 app.add_typer(report_app, name="report")
 
+ingest_app = typer.Typer(help="Ingestion del corpus (Stadio B).")
+app.add_typer(ingest_app, name="ingest")
+
+# Default del corpus pilota: Redditi PF Fascicolo 1, edizione 2026.
+_PILOT_PDF = "PF1_istruzioni_2026_agg 13 05 2026.pdf"
+
 
 @app.callback()
 def main() -> None:
@@ -46,6 +52,41 @@ def report_costs(
     except ValueError as e:
         raise typer.BadParameter(str(e)) from None
     typer.echo(render_rows(rows))
+
+
+@ingest_app.command("render")
+def ingest_render(
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+    modello: str = typer.Option("REDDITI-PF-F1", help="Modello dichiarativo."),
+    edizione: str = typer.Option("2026", help="Edizione delle istruzioni."),
+    periodo_imposta: str = typer.Option("2025", help="Periodo d'imposta."),
+    agg_data: str = typer.Option("2026-05-13", help="Data aggiornamento edizione."),
+    pdf: str = typer.Option(None, help="Percorso PDF (default: corpus pilota in raw_dir)."),
+) -> None:
+    """FR-B1: renderizza il PDF in PNG per pagina e registra documento e pagine."""
+    from poc_istruzioni.bootstrap import build_context, resolve_path
+    from poc_istruzioni.ingest.pipeline import render_document
+
+    ctx = build_context()
+    pdf_path = resolve_path(pdf) if pdf else resolve_path(ctx.settings.paths.raw_dir) / _PILOT_PDF
+    pages_dir = resolve_path(ctx.settings.paths.pages_dir) / doc_id
+
+    if not pdf_path.exists():
+        raise typer.BadParameter(f"PDF non trovato: {pdf_path}")
+
+    typer.echo(f"Rendering {pdf_path.name} -> {pages_dir} a {ctx.settings.rendering.dpi} DPI ...")
+    n = render_document(
+        ctx.conn,
+        doc_id=doc_id,
+        modello=modello,
+        edizione=edizione,
+        periodo_imposta=periodo_imposta,
+        agg_data=agg_data,
+        pdf_path=pdf_path,
+        pages_dir=pages_dir,
+        dpi=ctx.settings.rendering.dpi,
+    )
+    typer.echo(f"OK: {n} pagine renderizzate e registrate (doc_id={doc_id}).")
 
 
 @app.command()

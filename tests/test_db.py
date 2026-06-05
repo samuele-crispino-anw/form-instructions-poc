@@ -5,7 +5,25 @@ import sqlite3
 import pytest
 
 from poc_istruzioni.db.connection import connect, init_db
-from poc_istruzioni.db.repositories import Document, get_document, insert_document
+from poc_istruzioni.db.repositories import (
+    Document,
+    Page,
+    get_document,
+    get_pages,
+    insert_document,
+    insert_page,
+)
+
+
+def _doc(doc_id: str = "PF1-2026") -> Document:
+    return Document(
+        id=doc_id,
+        modello="REDDITI-PF-F1",
+        edizione="2026",
+        periodo_imposta="2025",
+        sha256="abc",
+        path="data/raw/pf1.pdf",
+    )
 
 EXPECTED_TABLES = {
     "documents",
@@ -61,3 +79,33 @@ def test_foreign_key_attiva(conn) -> None:
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("INSERT INTO pages (doc_id, n) VALUES (?, ?)", ("MANCANTE", 1))
         conn.commit()
+
+
+def test_pages_round_trip(conn) -> None:
+    insert_document(conn, _doc())
+    insert_page(conn, Page(doc_id="PF1-2026", n=1, png_path="p001.png", png_sha="aa"))
+    insert_page(
+        conn,
+        Page(
+            doc_id="PF1-2026",
+            n=2,
+            png_path="p002.png",
+            png_sha="bb",
+            vlm_status="needs_review",
+            overlap_score=0.3,
+            needs_review=True,
+        ),
+    )
+    pages = get_pages(conn, "PF1-2026")
+    assert [p.n for p in pages] == [1, 2]
+    assert pages[1].needs_review is True
+    assert pages[1].overlap_score == 0.3
+
+
+def test_insert_page_idempotente(conn) -> None:
+    insert_document(conn, _doc())
+    insert_page(conn, Page(doc_id="PF1-2026", n=1, png_sha="aa"))
+    insert_page(conn, Page(doc_id="PF1-2026", n=1, png_sha="bb"))  # stessa PK -> replace
+    pages = get_pages(conn, "PF1-2026")
+    assert len(pages) == 1
+    assert pages[0].png_sha == "bb"

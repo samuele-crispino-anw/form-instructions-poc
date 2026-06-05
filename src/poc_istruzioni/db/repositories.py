@@ -41,6 +41,25 @@ def insert_document(conn: sqlite3.Connection, doc: Document) -> None:
     conn.commit()
 
 
+def upsert_document(conn: sqlite3.Connection, doc: Document) -> None:
+    """Inserisce o sostituisce un documento (idempotente sul re-ingest)."""
+    conn.execute(
+        "INSERT OR REPLACE INTO documents "
+        "(id, modello, edizione, periodo_imposta, agg_data, sha256, path) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            doc.id,
+            doc.modello,
+            doc.edizione,
+            doc.periodo_imposta,
+            doc.agg_data,
+            doc.sha256,
+            doc.path,
+        ),
+    )
+    conn.commit()
+
+
 def get_document(conn: sqlite3.Connection, doc_id: str) -> Document | None:
     row = conn.execute("SELECT * FROM documents WHERE id = ?", (doc_id,)).fetchone()
     if row is None:
@@ -54,3 +73,53 @@ def get_document(conn: sqlite3.Connection, doc_id: str) -> Document | None:
         path=row["path"],
         agg_data=row["agg_data"],
     )
+
+
+@dataclass(frozen=True)
+class Page:
+    """Riga della tabella `pages` (pagina renderizzata, FR-B1/B2)."""
+
+    doc_id: str
+    n: int
+    png_path: str | None = None
+    png_sha: str | None = None
+    vlm_status: str | None = None
+    overlap_score: float | None = None
+    needs_review: bool = False
+
+
+def insert_page(conn: sqlite3.Connection, page: Page) -> None:
+    """Inserisce o sostituisce una pagina (idempotente sul re-rendering)."""
+    conn.execute(
+        "INSERT OR REPLACE INTO pages "
+        "(doc_id, n, png_path, png_sha, vlm_status, overlap_score, needs_review) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            page.doc_id,
+            page.n,
+            page.png_path,
+            page.png_sha,
+            page.vlm_status,
+            page.overlap_score,
+            int(page.needs_review),
+        ),
+    )
+    conn.commit()
+
+
+def get_pages(conn: sqlite3.Connection, doc_id: str) -> list[Page]:
+    rows = conn.execute(
+        "SELECT * FROM pages WHERE doc_id = ? ORDER BY n", (doc_id,)
+    ).fetchall()
+    return [
+        Page(
+            doc_id=r["doc_id"],
+            n=r["n"],
+            png_path=r["png_path"],
+            png_sha=r["png_sha"],
+            vlm_status=r["vlm_status"],
+            overlap_score=r["overlap_score"],
+            needs_review=bool(r["needs_review"]),
+        )
+        for r in rows
+    ]
