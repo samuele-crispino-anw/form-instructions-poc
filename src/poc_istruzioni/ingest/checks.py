@@ -105,7 +105,11 @@ DEFAULT_ARTIFACTS = ("REDDITI SC 2023",)
 
 @dataclass
 class CheckReport:
-    """Esito aggregato dei check automatici su una pagina."""
+    """Esito aggregato dei check automatici su una pagina.
+
+    `reasons` = problemi bloccanti (decidono needs_review e l'escalation).
+    `warnings` = segnali informativi non bloccanti (gerarchia heading, copertura).
+    """
 
     overlap: float
     number_recall: float
@@ -118,6 +122,7 @@ class CheckReport:
     artifacts: list[str]
     needs_review: bool
     reasons: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 def run_checks(
@@ -133,20 +138,28 @@ def run_checks(
     """Esegue tutti i check A) e decide needs_review con le motivazioni.
 
     `pdf_text` dovrebbe essere già ripulito da header/footer (vedi textlayer.strip_lines).
+    Gli artefatti noti vengono rimossi dal riferimento prima del confronto: una loro
+    corretta omissione nel markdown non deve risultare come "numero/contenuto mancante".
     """
-    pdf_nums = extract_numbers(pdf_text)
+    # Riferimento ripulito dagli artefatti noti (es. testo-fantasma "REDDITI SC 2023").
+    pdf_clean = pdf_text
+    for a in artifacts:
+        pdf_clean = pdf_clean.replace(a, "")
+
+    pdf_nums = extract_numbers(pdf_clean)
     vlm_nums = extract_numbers(vlm_md)
     missing = sorted(pdf_nums - vlm_nums)
     extra = sorted(vlm_nums - pdf_nums)
     number_recall = 1.0 if not pdf_nums else len(pdf_nums & vlm_nums) / len(pdf_nums)
 
-    overlap = token_overlap(vlm_md, pdf_text)
-    coverage = coverage_ratio(vlm_md, pdf_text)
+    overlap = token_overlap(vlm_md, pdf_clean)
+    coverage = coverage_ratio(vlm_md, pdf_clean)
     repetition = has_repetition(vlm_md)
     empty = is_empty_or_refusal(vlm_md)
     heading_issues = lint_headings(vlm_md)
     found_artifacts = find_artifacts(vlm_md, artifacts)
 
+    # Bloccanti: veri segnali di fedeltà (decidono needs_review/escalation).
     reasons: list[str] = []
     if empty:
         reasons.append("output vuoto o rifiuto")
@@ -154,14 +167,17 @@ def run_checks(
         reasons.append(f"overlap basso ({overlap:.2f} < {overlap_threshold})")
     if number_recall < number_recall_threshold:
         reasons.append(f"numeri mancanti (recall {number_recall:.2f}): {missing[:10]}")
-    if not (coverage_min <= coverage <= coverage_max):
-        reasons.append(f"copertura anomala ({coverage:.2f})")
     if repetition:
         reasons.append("ripetizione/degenerazione")
-    if heading_issues:
-        reasons.append(f"gerarchia heading: {heading_issues}")
     if found_artifacts:
-        reasons.append(f"artefatti presenti: {found_artifacts}")
+        reasons.append(f"artefatti nel markdown: {found_artifacts}")
+
+    # Non bloccanti: indizi informativi (rumorosi su questo corpus).
+    warnings: list[str] = []
+    if not (coverage_min <= coverage <= coverage_max):
+        warnings.append(f"copertura anomala ({coverage:.2f})")
+    if heading_issues:
+        warnings.append(f"gerarchia heading: {heading_issues}")
 
     return CheckReport(
         overlap=overlap,
@@ -175,4 +191,5 @@ def run_checks(
         artifacts=found_artifacts,
         needs_review=bool(reasons),
         reasons=reasons,
+        warnings=warnings,
     )

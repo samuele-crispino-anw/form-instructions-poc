@@ -77,3 +77,21 @@ def test_run_checks_pagina_cattiva_artefatto() -> None:
     rep = run_checks(vlm, pdf)
     assert rep.needs_review is True
     assert any("artefatti" in r for r in rep.reasons)
+
+
+def test_artefatto_nel_riferimento_non_conta_come_numero_mancante() -> None:
+    # Il VLM rimuove correttamente "REDDITI SC 2023"; il "2023" è nel solo riferimento.
+    pdf = "QUADRO RP REDDITI SC 2023 codice 1 franchigia 129,11"
+    vlm = "## QUADRO RP\ncodice 1 franchigia 129,11"
+    rep = run_checks(vlm, pdf)
+    assert "2023" not in rep.missing_numbers
+    assert rep.needs_review is False
+
+
+def test_heading_e_copertura_sono_warning_non_bloccanti() -> None:
+    # ### prima di ## (pagina di continuazione) + testo fedele -> warning, non needs_review.
+    pdf = "Righi RP1 RP4 codice 1 franchigia 129,11 spese sanitarie detrazione"
+    vlm = "### Righi RP1-RP4\ncodice 1 franchigia 129,11 spese sanitarie detrazione"
+    rep = run_checks(vlm, pdf)
+    assert rep.needs_review is False
+    assert any("gerarchia heading" in w for w in rep.warnings)
