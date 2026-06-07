@@ -298,6 +298,58 @@ def measure_escalation(
         typer.echo("=> Zona grigia (15-30%): stop-point, decidere coi numeri")
 
 
+@ingest_app.command("identity")
+def ingest_identity(
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+    page: int = typer.Option(1, help="Pagina del frontespizio."),
+) -> None:
+    """B.5: estrae l'identità dal frontespizio (VLM) e la valida vs i metadati registrati."""
+    from poc_istruzioni.bootstrap import build_context, resolve_path
+    from poc_istruzioni.config import load_prompt
+    from poc_istruzioni.db.repositories import get_document
+    from poc_istruzioni.ingest.identity import extract_identity, validate_identity
+    from poc_istruzioni.llm.client import LlmClient
+
+    ctx = build_context()
+    doc = get_document(ctx.conn, doc_id)
+    if doc is None:
+        raise typer.BadParameter(
+            f"documento {doc_id!r} non registrato: esegui prima `poc ingest render`"
+        )
+
+    image = resolve_path(ctx.settings.paths.pages_dir) / doc_id / f"p{page:03d}.png"
+    if not image.exists():
+        raise typer.BadParameter(f"immagine non trovata: {image}")
+
+    llm = LlmClient(ctx.conn, ctx.prices, settings=ctx.settings)
+    rec, res = extract_identity(
+        llm, image, model=ctx.settings.model_for("route_b"), prompt=load_prompt("identity")
+    )
+
+    typer.echo("Identità estratta dal frontespizio (vision):")
+    typer.echo(f"  modello         : {rec.modello}")
+    typer.echo(f"  edizione        : {rec.edizione}")
+    typer.echo(f"  periodo_imposta : {rec.periodo_imposta}")
+    typer.echo(f"  agg_data        : {rec.agg_data or '(non rilevata)'}")
+    typer.echo(
+        f"Atteso (da DB)    : edizione={doc.edizione}, periodo_imposta={doc.periodo_imposta}"
+    )
+
+    issues = validate_identity(
+        rec,
+        expected_edizione=doc.edizione,
+        expected_periodo=doc.periodo_imposta,
+        expected_modello_hint=doc.modello.split("-")[0],
+    )
+    typer.echo(f"Costo: ${res.cost.usd:.6f}")
+    if issues:
+        typer.echo("\nIDENTITÀ NON COERENTE — errore bloccante:")
+        for i in issues:
+            typer.echo(f"  - {i}")
+        raise typer.Exit(code=1)
+    typer.echo("\nIdentità coerente con le attese: OK.")
+
+
 @ingest_app.command("convert")
 def ingest_convert(
     pages: str = typer.Option(None, help="Pagine specifiche, es. '6,75'. Omesso = tutte."),
