@@ -180,5 +180,42 @@ def test_convert_document_integrazione(conn, tmp_path) -> None:
     )
     assert summary.pages == 2
     assert summary.route_a == 2 and summary.needs_human == 0
-    assert (tmp_path / "md" / "PF1-2026" / "pages" / "p001.md").exists()
+    md_file = tmp_path / "md" / "PF1-2026" / "pages" / "p001.md"
+    assert md_file.exists()
+    # frontmatter di provenienza presente in testa al file
+    content = md_file.read_text()
+    assert content.startswith("---\n")
+    assert "modello:" in content and "generato_il:" in content and "rotta:" in content
     assert governance(conn, "PF1-2026")["pages"] == 2
+
+
+def test_convert_document_pagina_bloccata_genera_report(conn, tmp_path) -> None:
+    import fitz
+
+    from poc_istruzioni.ingest.convert import convert_document
+
+    body = "codice 1 franchigia 129,11 spese sanitarie detrazione " + " ".join(
+        f"voce{i}" for i in range(15)
+    )
+    doc = fitz.open()
+    doc.new_page().insert_textbox(fitz.Rect(50, 50, 540, 750), body, fontsize=11)
+    pdf = tmp_path / "d.pdf"
+    doc.save(str(pdf))
+    doc.close()
+    pages_dir = tmp_path / "pages"
+    pages_dir.mkdir()
+    (pages_dir / "p001.png").write_bytes(b"\x89PNGFAKE")
+
+    # output con simbolo doppio -> il lint blocca su ogni tier -> needs_human
+    bad = "## QUADRO RP\ncodice 1 franchigia 129,11 spese sanitarie detrazione 1,73%%"
+    summary = convert_document(
+        conn, LlmClient(conn, PRICES, client=_fake(Always(bad))),
+        doc_id="PF1-2026", pdf_path=pdf, pages_dir=pages_dir, markdown_dir=tmp_path / "md",
+        settings=SETTINGS, prompt_text="PA", prompt_vision="PB",
+    )
+    assert summary.needs_human == 1
+    report = tmp_path / "md" / "PF1-2026" / "needs_review.html"
+    assert report.exists()
+    html = report.read_text()
+    assert "DA RIVEDERE" in html
+    assert "simbolo doppio" in html

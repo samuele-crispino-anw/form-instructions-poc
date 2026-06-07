@@ -99,3 +99,43 @@ def write_review_html(path: Path | str, title: str, items: list[ReviewItem]) -> 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(build_review_html(title, items), encoding="utf-8")
     return path
+
+
+@dataclass
+class AnomalyItem:
+    """Una pagina finita in revisione umana: cosa il revisore deve controllare."""
+
+    page_n: int
+    image_path: Path
+    markdown: str
+    reasons: list[str]
+    model_used: str
+    escalations: int
+
+
+def build_anomaly_report_html(items: list[AnomalyItem]) -> str:
+    """Report per il revisore umano: per pagina, MOTIVI in evidenza + immagine + markdown."""
+    sections = []
+    for it in items:
+        reasons = "".join(f"<li>{html.escape(r)}</li>" for r in it.reasons) or "<li>—</li>"
+        sections.append(
+            f"<div class='page' id='p{it.page_n}'>"
+            f"<div class='checks'><h3>p{it.page_n:03d} — DA RIVEDERE</h3>"
+            f"<b>Cosa controllare (motivi del blocco):</b><ul class='reasons'>{reasons}</ul>"
+            f"<small>modelli saliti: {it.escalations} escalation · ultimo modello: "
+            f"{html.escape(it.model_used)}</small></div>"
+            f"<div><h4>pagina (immagine)</h4>"
+            f"<img src='{_img_data_uri(it.image_path)}' alt='pagina {it.page_n}'></div>"
+            f"<div><h4>markdown prodotto (rifiutato)</h4>"
+            f"<pre>{html.escape(it.markdown)}</pre></div>"
+            f"</div>"
+        )
+    n = len(items)
+    intro = "Per ogni pagina: i <b>motivi</b> dicono cosa cercare; confronta immagine e markdown."
+    return (
+        "<!doctype html><html lang='it'><head><meta charset='utf-8'>"
+        f"<title>Pagine da rivedere</title><style>{_CSS}</style></head><body>"
+        f"<h1>Revisione umana — {n} pagine bloccate</h1>"
+        f"<p>{intro}</p>"
+        f"{''.join(sections)}</body></html>"
+    )

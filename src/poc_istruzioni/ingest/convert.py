@@ -15,10 +15,16 @@ from pathlib import Path
 import fitz  # PyMuPDF
 
 from poc_istruzioni.config import Settings
-from poc_istruzioni.db.repositories import ConversionRow, insert_audit, upsert_conversion
+from poc_istruzioni.db.repositories import (
+    ConversionRow,
+    get_pages,
+    insert_audit,
+    upsert_conversion,
+)
 from poc_istruzioni.ingest.checks import extract_numbers, run_gate_from_settings
 from poc_istruzioni.ingest.layout import analyze_document
 from poc_istruzioni.ingest.lint import lint_markdown
+from poc_istruzioni.ingest.review import AnomalyItem, build_anomaly_report_html
 from poc_istruzioni.ingest.routing import route
 from poc_istruzioni.ingest.textlayer import (
     extract_pages_text,
@@ -134,6 +140,22 @@ def _audit_diff(haiku_md: str, opus_md: str, critical_words: list[str]) -> bool:
     return False
 
 
+def _frontmatter(doc_id: str, n: int, outcome: PageOutcome, png_sha: str | None, ts: str) -> str:
+    """Frontmatter YAML di provenienza, anteposto al markdown su disco (FR-B3/FR-T1)."""
+    return (
+        "---\n"
+        f"doc_id: {doc_id}\n"
+        f"pagina: {n}\n"
+        f"generato_il: {ts}\n"
+        f"rotta: {outcome.route}\n"
+        f"modello: {outcome.model_used}\n"
+        f"escalations: {outcome.escalations}\n"
+        f"status: {outcome.status}\n"
+        f"png_sha256: {png_sha or ''}\n"
+        "---\n\n"
+    )
+
+
 @dataclass
 class RunSummary:
     pages: int
@@ -168,7 +190,9 @@ def convert_document(
     pages_text = extract_pages_text(pdf_path)
     boiler = find_boilerplate_lines(pages_text)
     metrics = {m.page: m for m in analyze_document(pdf_path)}
+    png_sha = {p.n: p.png_sha for p in get_pages(conn, doc_id)}  # provenienza PDF->immagine
     page_numbers = page_numbers or sorted(metrics)
+    anomalies: list[AnomalyItem] = []
 
     economical = settings.model_for(settings.escalation.route_a_chain[0])
     strong = settings.model_for(settings.escalation.route_a_chain[-1])
@@ -190,15 +214,28 @@ def convert_document(
                 prompt_text=prompt_text, prompt_vision=prompt_vision, boilerplate=boiler,
                 scopo="conversion:full-run", force_strong=breaker,
             )
+            ts = utc_now_iso()
+            image_path = pages_dir / f"p{n:03d}.png"
             md_path = md_dir / f"p{n:03d}.md"
-            md_path.write_text(outcome.markdown, encoding="utf-8")
+            # Frontmatter di provenienza sul file (timestamp, modello, rotta, sha png); gate/lint
+            # hanno già girato sull'output puro, quindi i metadati non inquinano la verifica.
+            md_path.write_text(
+                _frontmatter(doc_id, n, outcome, png_sha.get(n), ts) + outcome.markdown,
+                encoding="utf-8",
+            )
             usd += outcome.usd
             upsert_conversion(conn, ConversionRow(
                 doc_id=doc_id, n=n, route=outcome.route, model_used=outcome.model_used,
                 escalations=outcome.escalations, status=outcome.status,
                 reasons="; ".join(outcome.reasons) or None, md_path=str(md_path),
-                usd=round(outcome.usd, 6), ts=utc_now_iso(),
+                usd=round(outcome.usd, 6), ts=ts,
             ))
+            if outcome.status == "needs_human":
+                anomalies.append(AnomalyItem(
+                    page_n=n, image_path=image_path, markdown=outcome.markdown,
+                    reasons=outcome.reasons, model_used=outcome.model_used,
+                    escalations=outcome.escalations,
+                ))
 
             # Audit campionario: pagine Rotta A accettate al primo tier (Haiku).
             accepted_haiku = (
@@ -224,6 +261,11 @@ def convert_document(
                             breaker = True  # default forte per le pagine restanti
     finally:
         doc.close()
+
+    # Report leggibile per il revisore umano (cosa cercare) sulle pagine bloccate.
+    if anomalies:
+        report = Path(markdown_dir) / doc_id / "needs_review.html"
+        report.write_text(build_anomaly_report_html(anomalies), encoding="utf-8")
 
     from poc_istruzioni.db.repositories import governance
 
