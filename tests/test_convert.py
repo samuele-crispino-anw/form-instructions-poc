@@ -219,3 +219,47 @@ def test_convert_document_pagina_bloccata_genera_report(conn, tmp_path) -> None:
     html = report.read_text()
     assert "DA RIVEDERE" in html
     assert "simbolo doppio" in html
+    # snapshot immutabile della versione rifiutata
+    assert (tmp_path / "md" / "PF1-2026" / "needs_review" / "p001.rejected.md").exists()
+
+
+def test_lock_protegge_pagina_risolta(conn, tmp_path) -> None:
+    import fitz
+
+    from poc_istruzioni.db.repositories import ReviewRow, insert_review
+    from poc_istruzioni.ingest.convert import convert_document
+
+    body = "codice 1 franchigia 129,11 spese sanitarie detrazione " + " ".join(
+        f"voce{i}" for i in range(15)
+    )
+    doc = fitz.open()
+    doc.new_page().insert_textbox(fitz.Rect(50, 50, 540, 750), body, fontsize=11)
+    pdf = tmp_path / "d.pdf"
+    doc.save(str(pdf))
+    doc.close()
+    pages_dir = tmp_path / "pages"
+    pages_dir.mkdir()
+    (pages_dir / "p001.png").write_bytes(b"\x89PNGFAKE")
+
+    # pagina 1 già risolta da un umano + markdown corretto a mano sul disco
+    md_dir = tmp_path / "md" / "PF1-2026" / "pages"
+    md_dir.mkdir(parents=True)
+    (md_dir / "p001.md").write_text("CORRETTO A MANO", encoding="utf-8")
+    insert_review(conn, ReviewRow(
+        doc_id="PF1-2026", n=1, azione="corretta", revisore="Samuele",
+        ts="2026-06-07T00:00:00+00:00",
+    ))
+
+    kwargs = dict(
+        doc_id="PF1-2026", pdf_path=pdf, pages_dir=pages_dir, markdown_dir=tmp_path / "md",
+        settings=SETTINGS, prompt_text="PA", prompt_vision="PB",
+    )
+    # default: la pagina risolta viene SALTATA -> il markdown umano resta intatto
+    convert_document(conn, LlmClient(conn, PRICES, client=_fake(Always(GOOD))), **kwargs)
+    assert (md_dir / "p001.md").read_text() == "CORRETTO A MANO"
+
+    # --force: la pagina viene riconvertita -> il markdown umano viene sovrascritto
+    convert_document(
+        conn, LlmClient(conn, PRICES, client=_fake(Always(GOOD))), force=True, **kwargs
+    )
+    assert (md_dir / "p001.md").read_text() != "CORRETTO A MANO"

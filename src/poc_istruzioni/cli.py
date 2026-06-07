@@ -360,6 +360,9 @@ def ingest_convert(
     economical: bool = typer.Option(
         False, "--economical", help="Pipeline economica: parti da Haiku invece che da Opus."
     ),
+    force: bool = typer.Option(
+        False, "--force", help="Riconverti anche le pagine già risolte da un umano (lock off)."
+    ),
 ) -> None:
     """Run di conversione: routing + escalation + audit + circuit breaker (a pagamento).
 
@@ -397,6 +400,7 @@ def ingest_convert(
         prompt_text=load_prompt("convert_text"),
         prompt_vision=load_prompt("conversion"),
         page_numbers=page_numbers,
+        force=force,
     )
     typer.echo(
         f"Fatto: {summary.pages} pagine (A={summary.route_a}, B={summary.route_b}); "

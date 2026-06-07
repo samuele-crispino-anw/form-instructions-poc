@@ -18,6 +18,7 @@ from poc_istruzioni.config import Settings
 from poc_istruzioni.db.repositories import (
     ConversionRow,
     get_pages,
+    get_review,
     insert_audit,
     upsert_conversion,
 )
@@ -180,12 +181,18 @@ def convert_document(
     prompt_text: str,
     prompt_vision: str,
     page_numbers: list[int] | None = None,
+    force: bool = False,
 ) -> RunSummary:
-    """Converte le pagine con routing + escalation + audit + circuit breaker, e logga tutto."""
+    """Converte le pagine con routing + escalation + audit + circuit breaker, e logga tutto.
+
+    `force=False` (default) salta le pagine già risolte da un umano (lock): protegge le
+    correzioni e i falsi positivi confermati dal re-run (e dal non-determinismo del modello).
+    """
     pdf_path = Path(pdf_path)
     pages_dir = Path(pages_dir)
     md_dir = Path(markdown_dir) / doc_id / "pages"
     md_dir.mkdir(parents=True, exist_ok=True)
+    rejected_dir = Path(markdown_dir) / doc_id / "needs_review"
 
     pages_text = extract_pages_text(pdf_path)
     boiler = find_boilerplate_lines(pages_text)
@@ -205,6 +212,9 @@ def convert_document(
     usd = 0.0
     try:
         for n in page_numbers:
+            # Lock: non sovrascrivere una pagina già risolta da un umano (salvo --force).
+            if not force and get_review(conn, doc_id, n) is not None:
+                continue
             decision = route(metrics[n], settings.routing)
             cues = extract_text_with_cues(doc[n - 1], boilerplate=boiler, page_number=n)
             ref = strip_lines(pages_text[n - 1], boiler)
@@ -231,6 +241,12 @@ def convert_document(
                 usd=round(outcome.usd, 6), ts=ts,
             ))
             if outcome.status == "needs_human":
+                # Copia immutabile della versione rifiutata (non si perde dopo l'edit umano).
+                rejected_dir.mkdir(parents=True, exist_ok=True)
+                (rejected_dir / f"p{n:03d}.rejected.md").write_text(
+                    _frontmatter(doc_id, n, outcome, png_sha.get(n), ts) + outcome.markdown,
+                    encoding="utf-8",
+                )
                 anomalies.append(AnomalyItem(
                     page_n=n, image_path=image_path, markdown=outcome.markdown,
                     reasons=outcome.reasons, model_used=outcome.model_used,
