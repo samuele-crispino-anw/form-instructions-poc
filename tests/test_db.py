@@ -9,12 +9,16 @@ from poc_istruzioni.db.repositories import (
     ConversionRow,
     Document,
     Page,
+    ReviewRow,
+    false_positive_rules,
     get_document,
     get_pages,
+    get_review,
     governance,
     insert_audit,
     insert_document,
     insert_page,
+    insert_review,
     upsert_conversion,
 )
 
@@ -137,3 +141,21 @@ def test_governance(conn) -> None:
     assert g["needs_human"] == 1
     assert g["gate_misses"] == 1
     assert g["escalation_rate"] == 0.5
+
+
+def test_reviews_round_trip_e_falsi_positivi(conn) -> None:
+    insert_review(conn, ReviewRow(
+        doc_id="PF1-2026", n=181, azione="falso_positivo", revisore="Samuele",
+        nota="%% è nella fonte", regole_flaggate="lint: valore con simbolo doppio (es. 1,73%%)",
+        sha_rifiutato="aa", sha_risolto="aa", ts="2026-06-07T00:00:00+00:00",
+    ))
+    insert_review(conn, ReviewRow(
+        doc_id="PF1-2026", n=134, azione="corretta", revisore="Samuele",
+        nota="reintegrati 2 numeri", regole_flaggate="numeri mancanti",
+        sha_rifiutato="bb", sha_risolto="cc", ts="2026-06-07T00:01:00+00:00",
+    ))
+    r = get_review(conn, "PF1-2026", 181)
+    assert r is not None and r.azione == "falso_positivo" and r.revisore == "Samuele"
+    # solo i falsi positivi contano per la taratura delle regole
+    fp = false_positive_rules(conn, "PF1-2026")
+    assert fp == {"lint:simbolo_doppio": 1}

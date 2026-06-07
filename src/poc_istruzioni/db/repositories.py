@@ -182,6 +182,77 @@ def governance(conn: sqlite3.Connection, doc_id: str) -> dict:
     }
 
 
+@dataclass(frozen=True)
+class ReviewRow:
+    """Decisione del revisore umano su una pagina (tabella `reviews`)."""
+
+    doc_id: str
+    n: int
+    azione: str  # corretta | falso_positivo
+    revisore: str
+    nota: str | None = None
+    regole_flaggate: str | None = None
+    sha_rifiutato: str | None = None
+    sha_risolto: str | None = None
+    ts: str = ""
+
+
+def insert_review(conn: sqlite3.Connection, row: ReviewRow) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO reviews "
+        "(doc_id, n, azione, revisore, nota, regole_flaggate, sha_rifiutato, sha_risolto, ts) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            row.doc_id, row.n, row.azione, row.revisore, row.nota,
+            row.regole_flaggate, row.sha_rifiutato, row.sha_risolto, row.ts,
+        ),
+    )
+    conn.commit()
+
+
+def get_review(conn: sqlite3.Connection, doc_id: str, n: int) -> ReviewRow | None:
+    r = conn.execute(
+        "SELECT * FROM reviews WHERE doc_id = ? AND n = ?", (doc_id, n)
+    ).fetchone()
+    if r is None:
+        return None
+    return ReviewRow(
+        doc_id=r["doc_id"], n=r["n"], azione=r["azione"], revisore=r["revisore"],
+        nota=r["nota"], regole_flaggate=r["regole_flaggate"],
+        sha_rifiutato=r["sha_rifiutato"], sha_risolto=r["sha_risolto"], ts=r["ts"],
+    )
+
+
+# Marcatori per attribuire un falso positivo alla regola che l'ha generato (calibrazione).
+_RULE_MARKERS = {
+    "simbolo doppio": "lint:simbolo_doppio",
+    "dingbat": "lint:dingbat",
+    "header/footer": "lint:header_footer",
+    "numero di pagina": "lint:numero_pagina",
+    "numeri mancanti": "gate:numeri_mancanti",
+    "overlap basso": "gate:overlap",
+    "parole critiche": "gate:parole_critiche",
+    "abbinamenti codice": "gate:pair_codici",
+    "ripetizione": "gate:ripetizione",
+    "artefatti": "gate:artefatti",
+}
+
+
+def false_positive_rules(conn: sqlite3.Connection, doc_id: str) -> dict[str, int]:
+    """Conteggio dei falsi positivi per regola (feedback per tarare gate/lint)."""
+    rows = conn.execute(
+        "SELECT regole_flaggate FROM reviews WHERE doc_id = ? AND azione = 'falso_positivo'",
+        (doc_id,),
+    ).fetchall()
+    counts: dict[str, int] = {}
+    for r in rows:
+        text = (r["regole_flaggate"] or "").lower()
+        for marker, rule in _RULE_MARKERS.items():
+            if marker in text:
+                counts[rule] = counts.get(rule, 0) + 1
+    return counts
+
+
 def update_page_status(
     conn: sqlite3.Connection,
     doc_id: str,

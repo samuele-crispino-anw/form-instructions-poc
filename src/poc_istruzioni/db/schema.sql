@@ -97,6 +97,20 @@ CREATE TABLE IF NOT EXISTS audits (
     PRIMARY KEY (doc_id, n)
 );
 
+-- Feedback umano sulle pagine andate in revisione (chiusura del ciclo human-in-the-loop).
+CREATE TABLE IF NOT EXISTS reviews (
+    doc_id          TEXT NOT NULL,
+    n               INTEGER NOT NULL,
+    azione          TEXT NOT NULL,          -- corretta | falso_positivo
+    revisore        TEXT NOT NULL,
+    nota            TEXT,
+    regole_flaggate TEXT,                   -- i motivi che il gate/lint avevano sollevato
+    sha_rifiutato   TEXT,                   -- sha del markdown rifiutato (versione preservata)
+    sha_risolto     TEXT,                   -- sha del markdown risolto (corretto o accettato)
+    ts              TEXT NOT NULL,
+    PRIMARY KEY (doc_id, n)
+);
+
 -- Evaluation (FR-E).
 CREATE TABLE IF NOT EXISTS eval_cases (
     id          TEXT PRIMARY KEY,
