@@ -50,3 +50,6 @@ route_a_chain = ["route_a_economical", "route_a_strong"]  # scope modelli (vedi 
 route_b_model = "route_b"        # VLM, ultimo gradino-modello prima dell'umano
 audit_fraction = 0.10            # frazione pagine Rotta A ri-fatte con Opus (audit M2.3)
 circuit_breaker = true           # stop+default forte se l'audit trova un gate-miss
+# PoC: priorità ACCURATEZZA -> parti da Opus. Metti true per la pipeline economica (Haiku-first)
+# quando scaleremo. Lo switch non cambia gate/lint/escalation/audit, solo il modello di partenza.
+economical_first = false

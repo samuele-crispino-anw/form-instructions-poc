@@ -92,7 +92,9 @@ def convert_page(
         attempts = [("B", esc.route_b_model)]
     else:
         chain = esc.route_a_chain
-        if force_strong and len(chain) > 1:  # circuit breaker: salta l'economico
+        # Default PoC (economical_first=false): parti dal forte (Opus), salta l'economico.
+        # Circuit breaker: stesso effetto sulle pagine restanti.
+        if (not esc.economical_first or force_strong) and len(chain) > 1:
             chain = chain[1:]
         attempts = [("A", s) for s in chain] + [("B", esc.route_b_model)]
 

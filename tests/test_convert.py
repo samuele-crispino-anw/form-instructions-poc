@@ -15,7 +15,11 @@ from poc_istruzioni.db.connection import connect, init_db
 from poc_istruzioni.ingest.convert import convert_page
 from poc_istruzioni.llm.client import LlmClient
 
-SETTINGS = load_settings()  # usa la config reale (tier e catena)
+SETTINGS = load_settings()  # default reale: economical_first=false (parti da Opus)
+# Variante economica (Haiku-first) per i test della catena graduata.
+ECON = SETTINGS.model_copy(
+    update={"escalation": SETTINGS.escalation.model_copy(update={"economical_first": True})}
+)
 
 PRICES = Prices(
     updated="t",
@@ -69,47 +73,56 @@ def conn(tmp_path):
     c.close()
 
 
-def _call(conn, client, route, tmp_path, force_strong=False):
+def _call(conn, client, route, tmp_path, *, settings=ECON, force_strong=False):
     img = tmp_path / "p001.png"
     img.write_bytes(b"\x89PNGFAKE")
     return convert_page(
         LlmClient(conn, PRICES, client=client),
         route=route, page_n=1, cues_text="dummy", image_path=img, ref_text=REF,
-        settings=SETTINGS, prompt_text="PA", prompt_vision="PB",
+        settings=settings, prompt_text="PA", prompt_vision="PB",
         boilerplate=frozenset(), force_strong=force_strong,
     )
 
 
-def test_haiku_passa_subito(conn, tmp_path) -> None:
-    out = _call(conn, _fake(Always(GOOD)), "A", tmp_path)
+def test_economica_haiku_passa_subito(conn, tmp_path) -> None:
+    # economical_first=True: la Rotta A parte da Haiku
+    out = _call(conn, _fake(Always(GOOD)), "A", tmp_path, settings=ECON)
     assert out.status == "ok"
     assert out.escalations == 0
     assert "haiku" in out.model_used
 
 
-def test_escalation_haiku_a_opus(conn, tmp_path) -> None:
-    out = _call(conn, _fake(ByModel()), "A", tmp_path)
+def test_economica_escalation_haiku_a_opus(conn, tmp_path) -> None:
+    out = _call(conn, _fake(ByModel()), "A", tmp_path, settings=ECON)
     assert out.status == "ok"
     assert out.escalations == 1  # Haiku fallita, Opus ripara
     assert "opus" in out.model_used
 
 
+def test_default_sicuro_parte_da_opus(conn, tmp_path) -> None:
+    # default PoC (economical_first=false): la Rotta A parte da Opus, niente Haiku
+    out = _call(conn, _fake(ByModel()), "A", tmp_path, settings=SETTINGS)
+    assert out.status == "ok"
+    assert out.escalations == 0  # Opus passa al primo colpo
+    assert "opus" in out.model_used
+
+
 def test_force_strong_parte_da_opus(conn, tmp_path) -> None:
-    out = _call(conn, _fake(ByModel()), "A", tmp_path, force_strong=True)
+    out = _call(conn, _fake(ByModel()), "A", tmp_path, settings=ECON, force_strong=True)
     assert out.status == "ok"
     assert out.escalations == 0  # parte già forte (circuit breaker)
     assert "opus" in out.model_used
 
 
 def test_tutto_fallisce_needs_human(conn, tmp_path) -> None:
-    out = _call(conn, _fake(Always(BAD)), "A", tmp_path)
+    out = _call(conn, _fake(Always(BAD)), "A", tmp_path, settings=ECON)
     assert out.status == "needs_human"
     assert out.escalations == 2  # haiku -> opus -> vlm, tutti falliti
     assert out.reasons  # motivi dell'ultimo tentativo
 
 
 def test_route_b_usa_vlm(conn, tmp_path) -> None:
-    out = _call(conn, _fake(Always(GOOD)), "B", tmp_path)
+    out = _call(conn, _fake(Always(GOOD)), "B", tmp_path, settings=SETTINGS)
     assert out.status == "ok"
     assert out.route == "B"
     assert out.escalations == 0

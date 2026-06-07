@@ -75,6 +75,7 @@ class Escalation(BaseModel):
     route_b_model: str  # scope del VLM (gradino-modello finale prima dell'umano)
     audit_fraction: float  # frazione di pagine Rotta A ri-fatte con Opus (audit)
     circuit_breaker: bool  # stop + default forte se l'audit trova un gate-miss
+    economical_first: bool  # True = parti da Haiku (economia); False = parti da Opus (accuratezza)
 
 
 class Settings(BaseModel):

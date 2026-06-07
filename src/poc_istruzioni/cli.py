@@ -357,31 +357,43 @@ def ingest_convert(
     to: int = typer.Option(None, "--to", help="Fine range (incluso)."),
     doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
     pdf: str = typer.Option(None, help="Percorso PDF (default: corpus pilota)."),
+    economical: bool = typer.Option(
+        False, "--economical", help="Pipeline economica: parti da Haiku invece che da Opus."
+    ),
 ) -> None:
-    """Run di conversione: routing + escalation Graduata + audit + circuit breaker (a pagamento)."""
+    """Run di conversione: routing + escalation + audit + circuit breaker (a pagamento).
+
+    Default: priorità accuratezza (Rotta A parte da Opus). `--economical` parte da Haiku.
+    """
     from poc_istruzioni.bootstrap import build_context, resolve_path
     from poc_istruzioni.config import load_prompt
     from poc_istruzioni.ingest.convert import convert_document
     from poc_istruzioni.llm.client import LlmClient
 
     ctx = build_context()
+    settings = ctx.settings
+    if economical:  # override a runtime: pipeline Haiku-first
+        settings = settings.model_copy(
+            update={"escalation": settings.escalation.model_copy(update={"economical_first": True})}
+        )
     page_numbers = None
     if pages or frm is not None:
         page_numbers = _parse_pages(pages, frm, to)
-    pdf_path = resolve_path(pdf) if pdf else resolve_path(ctx.settings.paths.raw_dir) / _PILOT_PDF
+    pdf_path = resolve_path(pdf) if pdf else resolve_path(settings.paths.raw_dir) / _PILOT_PDF
     if not pdf_path.exists():
         raise typer.BadParameter(f"PDF non trovato: {pdf_path}")
 
     n = len(page_numbers) if page_numbers else "tutte le"
-    typer.echo(f"Conversione {n} pagine (routing + escalation Graduata) ...")
+    modo = "economica (Haiku-first)" if economical else "accuratezza (Opus-first)"
+    typer.echo(f"Conversione {n} pagine — modalità {modo} ...")
     summary = convert_document(
         ctx.conn,
-        LlmClient(ctx.conn, ctx.prices, settings=ctx.settings),
+        LlmClient(ctx.conn, ctx.prices, settings=settings),
         doc_id=doc_id,
         pdf_path=pdf_path,
-        pages_dir=resolve_path(ctx.settings.paths.pages_dir) / doc_id,
-        markdown_dir=resolve_path(ctx.settings.paths.markdown_dir),
-        settings=ctx.settings,
+        pages_dir=resolve_path(settings.paths.pages_dir) / doc_id,
+        markdown_dir=resolve_path(settings.paths.markdown_dir),
+        settings=settings,
         prompt_text=load_prompt("convert_text"),
         prompt_vision=load_prompt("conversion"),
         page_numbers=page_numbers,
