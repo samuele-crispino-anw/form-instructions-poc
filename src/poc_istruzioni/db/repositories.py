@@ -210,6 +210,24 @@ def insert_review(conn: sqlite3.Connection, row: ReviewRow) -> None:
     conn.commit()
 
 
+def update_conversion_status(conn: sqlite3.Connection, doc_id: str, n: int, status: str) -> None:
+    """Aggiorna lo stato di una conversione (es. dopo risoluzione umana)."""
+    conn.execute(
+        "UPDATE conversions SET status = ? WHERE doc_id = ? AND n = ?", (status, doc_id, n)
+    )
+    conn.commit()
+
+
+def pending_reviews(conn: sqlite3.Connection, doc_id: str) -> list[sqlite3.Row]:
+    """Pagine needs_human ancora senza decisione umana (coda di revisione)."""
+    return conn.execute(
+        "SELECT c.n, c.reasons, c.model_used, c.escalations FROM conversions c "
+        "LEFT JOIN reviews r ON r.doc_id = c.doc_id AND r.n = c.n "
+        "WHERE c.doc_id = ? AND c.status = 'needs_human' AND r.n IS NULL ORDER BY c.n",
+        (doc_id,),
+    ).fetchall()
+
+
 def get_review(conn: sqlite3.Connection, doc_id: str, n: int) -> ReviewRow | None:
     r = conn.execute(
         "SELECT * FROM reviews WHERE doc_id = ? AND n = ?", (doc_id, n)

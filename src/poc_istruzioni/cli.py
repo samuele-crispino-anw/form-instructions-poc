@@ -17,6 +17,9 @@ app.add_typer(report_app, name="report")
 ingest_app = typer.Typer(help="Ingestion del corpus (Stadio B).")
 app.add_typer(ingest_app, name="ingest")
 
+review_app = typer.Typer(help="Revisione umana delle pagine bloccate (human-in-the-loop).")
+app.add_typer(review_app, name="review")
+
 # Default del corpus pilota: Redditi PF Fascicolo 1, edizione 2026.
 _PILOT_PDF = "PF1_istruzioni_2026_agg 13 05 2026.pdf"
 
@@ -484,6 +487,80 @@ def ingest_transcribe(
     if summary.failed:
         typer.echo(f"FALLITE (da ritentare): {summary.failed}")
     typer.echo(f"Review: {summary.review_path}")
+
+
+@review_app.command("list")
+def review_list(doc_id: str = typer.Option("PF1-2026", help="Identificatore documento.")) -> None:
+    """Elenca le pagine in attesa di revisione umana (needs_human non ancora risolte)."""
+    from poc_istruzioni.bootstrap import build_context
+    from poc_istruzioni.db.repositories import pending_reviews
+
+    ctx = build_context()
+    rows = pending_reviews(ctx.conn, doc_id)
+    if not rows:
+        typer.echo("Nessuna pagina in attesa di revisione.")
+        return
+    typer.echo(f"{len(rows)} pagine da rivedere:")
+    for r in rows:
+        typer.echo(
+            f"  p{r['n']:03d} [{r['model_used']}, {r['escalations']} escal] -> {r['reasons']}"
+        )
+    typer.echo("\nRisolvi con: poc review resolve --page N --action corretta|falso-positivo --by X")
+
+
+@review_app.command("resolve")
+def review_resolve(
+    page: int = typer.Option(..., help="Pagina da risolvere."),
+    action: str = typer.Option(..., help="corretta | falso-positivo"),
+    by: str = typer.Option(..., "--by", help="Nome del revisore."),
+    note: str = typer.Option("", help="Nota libera del revisore."),
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+) -> None:
+    """Registra la decisione umana su una pagina: correzione o falso positivo (e la blocca)."""
+    from poc_istruzioni.bootstrap import build_context, resolve_path
+    from poc_istruzioni.db.repositories import (
+        ReviewRow,
+        insert_review,
+        update_conversion_status,
+    )
+    from poc_istruzioni.provenance import sha256_file, utc_now_iso
+
+    azione = {"corretta": "corretta", "falso-positivo": "falso_positivo"}.get(action)
+    if azione is None:
+        raise typer.BadParameter("action deve essere 'corretta' o 'falso-positivo'")
+
+    ctx = build_context()
+    conv = ctx.conn.execute(
+        "SELECT reasons FROM conversions WHERE doc_id = ? AND n = ?", (doc_id, page)
+    ).fetchone()
+    if conv is None:
+        raise typer.BadParameter(f"pagina {page} non convertita per {doc_id}")
+
+    pages_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "pages"
+    md = pages_dir / f"p{page:03d}.md"
+    rejected = (
+        resolve_path(ctx.settings.paths.markdown_dir)
+        / doc_id / "needs_review" / f"p{page:03d}.rejected.md"
+    )
+    sha_now = sha256_file(md) if md.exists() else None
+    if azione == "corretta":
+        sha_rif = sha256_file(rejected) if rejected.exists() else None
+        sha_ris = sha_now
+        status = "corretta_umano"
+    else:  # falso_positivo: markdown accettato così com'è
+        sha_rif = sha_ris = sha_now
+        status = "accettata_umano"
+
+    insert_review(ctx.conn, ReviewRow(
+        doc_id=doc_id, n=page, azione=azione, revisore=by, nota=note or None,
+        regole_flaggate=conv["reasons"], sha_rifiutato=sha_rif, sha_risolto=sha_ris,
+        ts=utc_now_iso(),
+    ))
+    update_conversion_status(ctx.conn, doc_id, page, status)
+    typer.echo(
+        f"p{page:03d} risolta come '{azione}' da {by}. Stato: {status}. "
+        "Pagina bloccata al re-run (usa --force per riconvertirla)."
+    )
 
 
 @app.command()
