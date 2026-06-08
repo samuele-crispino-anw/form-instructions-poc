@@ -210,6 +210,25 @@ def insert_review(conn: sqlite3.Connection, row: ReviewRow) -> None:
     conn.commit()
 
 
+def insert_nodes(conn: sqlite3.Connection, doc_id: str, nodes: list) -> None:
+    """Sostituisce l'albero di navigazione del documento (D1)."""
+    conn.execute("DELETE FROM nodes WHERE doc_id = ?", (doc_id,))
+    for n in nodes:
+        conn.execute(
+            "INSERT INTO nodes "
+            "(id, doc_id, parent_id, kind, level, title, page_start, page_end, ord) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (n.id, doc_id, n.parent_id, n.kind, n.level, n.title, n.page_start, n.page_end, n.ord),
+        )
+    conn.commit()
+
+
+def get_nodes(conn: sqlite3.Connection, doc_id: str) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM nodes WHERE doc_id = ? ORDER BY ord", (doc_id,)
+    ).fetchall()
+
+
 def update_conversion_status(conn: sqlite3.Connection, doc_id: str, n: int, status: str) -> None:
     """Aggiorna lo stato di una conversione (es. dopo risoluzione umana)."""
     conn.execute(

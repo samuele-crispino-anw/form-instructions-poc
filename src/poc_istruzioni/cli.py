@@ -20,6 +20,9 @@ app.add_typer(ingest_app, name="ingest")
 review_app = typer.Typer(help="Revisione umana delle pagine bloccate (human-in-the-loop).")
 app.add_typer(review_app, name="review")
 
+nav_app = typer.Typer(help="Navigazione gerarchica (Fase 2): albero dei nodi, retrieval.")
+app.add_typer(nav_app, name="nav")
+
 # Default del corpus pilota: Redditi PF Fascicolo 1, edizione 2026.
 _PILOT_PDF = "PF1_istruzioni_2026_agg 13 05 2026.pdf"
 
@@ -561,6 +564,35 @@ def review_resolve(
         f"p{page:03d} risolta come '{azione}' da {by}. Stato: {status}. "
         "Pagina bloccata al re-run (usa --force per riconvertirla)."
     )
+
+
+@nav_app.command("tree")
+def nav_tree(
+    frm: int = typer.Option(69, "--from", help="Prima pagina (default: inizio quadro RP)."),
+    to: int = typer.Option(133, "--to", help="Ultima pagina (default: fine quadro RP)."),
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+) -> None:
+    """D1: costruisce l'albero di navigazione (per pattern strutturale) e lo mostra."""
+    from poc_istruzioni.bootstrap import build_context, resolve_path
+    from poc_istruzioni.db.repositories import insert_nodes
+    from poc_istruzioni.serving.nodes import build_tree, parse_structural_headings, render_tree
+
+    ctx = build_context()
+    pages_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "pages"
+    slice_pages = list(range(frm, to + 1))
+    md_by_page = {}
+    for n in slice_pages:
+        f = pages_dir / f"p{n:03d}.md"
+        if f.exists():
+            md_by_page[n] = f.read_text(encoding="utf-8")
+
+    nodes = build_tree(parse_structural_headings(md_by_page), slice_pages)
+    insert_nodes(ctx.conn, doc_id, nodes)
+    typer.echo(render_tree(nodes))
+    kinds = {}
+    for n in nodes:
+        kinds[n.kind] = kinds.get(n.kind, 0) + 1
+    typer.echo(f"\n{len(nodes)} nodi: {kinds}")
 
 
 @app.command()

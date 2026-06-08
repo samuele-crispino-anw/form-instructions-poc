@@ -97,6 +97,21 @@ CREATE TABLE IF NOT EXISTS audits (
     PRIMARY KEY (doc_id, n)
 );
 
+-- Albero di navigazione (Fase 2): nodi quadro/sezione/rigo/codice derivati dalla struttura
+-- semantica degli heading (non dal numero di '#', incoerente nel markdown per-pagina).
+CREATE TABLE IF NOT EXISTS nodes (
+    id         INTEGER NOT NULL,
+    doc_id     TEXT NOT NULL,
+    parent_id  INTEGER,                   -- nodo padre (self-ref); NULL = radice
+    kind       TEXT NOT NULL,             -- quadro | sezione | rigo | codice | sezione_doc
+    level      INTEGER NOT NULL,          -- profondità canonica (1=quadro ...)
+    title      TEXT NOT NULL,
+    page_start INTEGER NOT NULL,
+    page_end   INTEGER NOT NULL,
+    ord        INTEGER NOT NULL,          -- ordine di lettura
+    PRIMARY KEY (doc_id, id)
+);
+
 -- Feedback umano sulle pagine andate in revisione (chiusura del ciclo human-in-the-loop).
 CREATE TABLE IF NOT EXISTS reviews (
     doc_id          TEXT NOT NULL,
