@@ -138,6 +138,42 @@ scaling — non solo i bug, ma anche le assunzioni smentite dai dati.
 
 ---
 
+## L8 — Il modello di conversione INVENTA heading strutturali non presenti nella fonte
+
+- **Contesto:** Rotta A (text-layer pdfplumber → ricostruzione markdown via LLM).
+- **Sintomo:** `## QUADRO RP — Oneri e spese` compariva nel markdown di p.91/126/130/132, ma su
+  quelle pagine la stringa "QUADRO RP" **non esiste nel text-layer del PDF** (verificato con
+  pdfplumber). Il modello aggiungeva l'heading di contesto di sua iniziativa, copiando l'esempio
+  del prompt. L'unico header realmente ripetuto è il running-header del fascicolo
+  ("REDDITI PERSONE FISICHE 2026 …"), che già gestiamo come titolo-documento.
+- **Causa radice:** il prompt di conversione (a) imponeva di marcare quadro/sezione con `##` e
+  (b) forniva come esempio una **stringa reale copiabile** ("## QUADRO RP — Oneri e spese"). Sulle
+  pagine di continuazione il modello ri-emetteva l'heading per "ancorare" la struttura.
+- **Perché il gate non l'ha intercettato:** i nostri check sono **direzionali** — verificano la
+  *conservazione* della fonte (nulla di importante PERSO), non la *fedeltà* (nulla AGGIUNTO oltre la
+  fonte). In dettaglio: `token_overlap = |pdf ∩ md| / |pdf|` non cala se si aggiungono token assenti
+  nel PDF; `coverage_ratio` è un rapporto di lunghezza insensibile a 5 parole su pagina densa;
+  numeri/parole-critiche/coppie cercano solo perdite. Inoltre il gate gira **per-pagina**, mentre il
+  segnale (stesso heading su più pagine) è **cross-pagina**; e l'aggiunta è piccola e
+  *semanticamente corretta* → nessuna soglia di rumore/lunghezza scatta.
+- **Correzioni (due leve):**
+  1. *Prevenzione (prompt):* istruire a emettere un heading **solo per un titolo fisicamente
+     presente sulla pagina**, a non ripetere il quadro/sezione padre come contesto sulle pagine di
+     continuazione, e sostituire gli esempi con **placeholder** non copiabili
+     (`## <CODICE QUADRO> — <titolo>`).
+  2. *Rilevazione (gate/lint):* **heading-provenance check** — ogni heading strutturale emesso deve
+     essere rintracciabile (fuzzy/normalizzato) nel text-layer della pagina; altrimenti flag
+     "heading inventato". Variante cross-pagina: stesso heading su molte pagine = sospetto.
+- **Principio (generale):** un LLM in conversione **aggiunge scaffolding strutturale** (titoli,
+  contesto) non presente nella fonte; è un problema di **fedeltà alla fonte** (FR-T1/B6), non solo
+  di formattazione. Servono controlli di provenienza che ancorino ciò che il modello produce al
+  testo realmente estratto. Intercettare in conversione (pagina per pagina) è molto meglio che
+  scoprirlo a valle nella costruzione dell'albero. Vale per qualsiasi documento e qualsiasi tipo di
+  allucinazione strutturale. Vedi [[L1]] (la deduplica dell'albero è solo la *mitigazione a valle*
+  di questo problema *a monte*).
+
+---
+
 ## Indice rapido dei principi generali (checklist per la pipeline futura)
 
 1. Pattern strutturali del dominio **configurabili per famiglia** di documento (non hardcoded).
@@ -149,3 +185,5 @@ scaling — non solo i bug, ma anche le assunzioni smentite dai dati.
 7. Nessun pre-routing predittivo senza evidenza di separazione.
 8. **Idempotenza, ripresa, resilienza** ai transitori con persistenza granulare.
 9. **Ledger costi** sempre attivo; stime esplicite sulla config e validate su campione.
+10. **Heading-provenance check**: ciò che l'LLM emette come struttura deve essere ancorato al
+    text-layer; prevenire nel prompt (placeholder, no ripetizione contesto) e rilevare nel gate.
