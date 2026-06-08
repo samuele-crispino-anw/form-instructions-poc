@@ -4,6 +4,7 @@ from poc_istruzioni.ingest.checks import (
     code_pair_mismatches,
     coverage_ratio,
     critical_word_losses,
+    dehyphenate,
     extract_numbers,
     find_artifacts,
     has_repetition,
@@ -112,6 +113,22 @@ def test_pair_check_scambio_etichette() -> None:
     assert any("codice 1" in i for i in issues)
     ok = "- **1** = spese sanitarie\n- **2** = persone con disabilità"
     assert code_pair_mismatches(ok, ref, label_overlap_min=0.5) == []
+
+
+def test_dehyphenate_ricongiunge_soft_hyphen() -> None:
+    assert dehyphenate("non\xad\nché le spese") == "nonché le spese"
+    assert dehyphenate("esclusi\xadvamente") == "esclusivamente"
+    assert dehyphenate("testo normale") == "testo normale"
+
+
+def test_sillabazione_non_e_falso_positivo(tmp_path) -> None:
+    # caso reale p.71/p.170: la fonte ha 'non-ché' sillabato, il markdown ha 'nonché'.
+    # Senza de-ifenazione la guardia conterebbe 'non' 0 vs 1 (falso positivo); ora no.
+    pdf = "le spese non\xad\nché i contributi sono deducibili entro il limite"
+    vlm = "## QUADRO RP\nle spese nonché i contributi sono deducibili entro il limite"
+    rep = run_checks(vlm, pdf, overlap_threshold=0.0)
+    assert rep.needs_review is False
+    assert rep.critical_losses == []
 
 
 def test_critical_word_negazione_persa() -> None:

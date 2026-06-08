@@ -17,6 +17,17 @@ if TYPE_CHECKING:
 
 # Token numerico: cifra seguita da cifre/separatori (importi, codici, percentuali, pagine).
 _NUM_RE = re.compile(r"\d[\d.,]*")
+# Soft-hyphen (sillabazione PDF a fine riga) + eventuale spazio/newline.
+_SOFT_HYPHEN_RE = re.compile(r"\xad\s*")
+
+
+def dehyphenate(text: str) -> str:
+    """Ricongiunge le parole spezzate dal soft-hyphen (es. 'non-ché' -> 'nonché').
+
+    Necessario per non contare frammenti spuri ('non', 'esclusi') come parole/numeri
+    'persi' quando il modello ricongiunge correttamente la parola sillabata.
+    """
+    return _SOFT_HYPHEN_RE.sub("", text)
 # Parola di contenuto (>=3 caratteri) per l'overlap testuale.
 _WORD_RE = re.compile(r"[a-zàèéìòù0-9]{3,}", re.IGNORECASE)
 # Marcatori di rifiuto/meta (multi-parola per evitare falsi positivi come "non possono").
@@ -206,8 +217,9 @@ def run_checks(
     Gli artefatti noti vengono rimossi dal riferimento prima del confronto. Se `page_number`
     è dato, il numero di pagina del footer non conta come numero di contenuto (§M1).
     """
-    # Riferimento ripulito dagli artefatti noti (es. testo-fantasma "REDDITI SC 2023").
-    pdf_clean = pdf_text
+    # Riferimento ripulito: artefatti noti rimossi + de-ifenazione (frammenti da sillabazione
+    # non devono contare come parole/numeri "persi" se il modello ricongiunge la parola).
+    pdf_clean = dehyphenate(pdf_text)
     for a in artifacts:
         pdf_clean = pdf_clean.replace(a, "")
 
