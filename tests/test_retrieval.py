@@ -1,7 +1,11 @@
 """Test della logica pura dell'orchestratore retrieval (gate + assembly)."""
 
 from poc_istruzioni.serving.pins import Pin
-from poc_istruzioni.serving.retrieval import build_served_context, classify_fastpath
+from poc_istruzioni.serving.retrieval import (
+    build_served_context,
+    classify_fastpath,
+    served_page_range,
+)
 
 
 def test_gate_netto_quando_top1_alto_e_distante() -> None:
@@ -40,3 +44,12 @@ def test_build_served_context_mette_i_pin_prima_della_voce() -> None:
 def test_build_served_context_senza_pin() -> None:
     out = build_served_context("Rigo RP1", "Testo.", [])
     assert "REGOLE GOVERNANTI" not in out and "Testo." in out
+
+
+def test_served_page_range_estende_alla_continuazione() -> None:
+    # RP90 (p.132) col nodo successivo RP91 a p.133 -> serve 132-133 (cattura la coda su p.133)
+    assert served_page_range(132, 132, [110, 128, 132, 133]) == (132, 133)
+    # ultimo nodo: nessun successivo -> resta il proprio range
+    assert served_page_range(133, 133, [110, 132, 133]) == (133, 133)
+    # nodo che già copre più pagine, prossimo nodo subito dopo
+    assert served_page_range(78, 79, [75, 78, 80]) == (78, 80)

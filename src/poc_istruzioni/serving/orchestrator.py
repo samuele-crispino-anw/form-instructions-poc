@@ -18,6 +18,7 @@ from poc_istruzioni.serving.retrieval import (
     build_served_context,
     classify_fastpath,
     navigate_llm,
+    served_page_range,
 )
 from poc_istruzioni.serving.summaries import _page_text
 
@@ -82,11 +83,13 @@ def run_retrieval(ctx, query: str, doc_id: str) -> RetrievalResult | None:
     if target is not None:
         t = by_id[target]
         pages_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "pages"
-        md = _read_pages(pages_dir, t.page_start, t.page_end)
+        # estende il serving fino all'inizio del nodo successivo (anti-troncamento)
+        s_start, s_end = served_page_range(t.page_start, t.page_end, [n.page_start for n in nodes])
+        md = _read_pages(pages_dir, s_start, s_end)
         result.pins = collect_pins(target, nodes, pins)
         result.target_title = t.title
-        result.target_pages = f"{t.page_start}-{t.page_end}"
+        result.target_pages = f"{t.page_start}-{t.page_end}"  # range del nodo (display invariato)
         result.served_text = build_served_context(
-            t.title, _page_text(md, t.page_start, t.page_end), result.pins
+            t.title, _page_text(md, s_start, s_end), result.pins
         )
     return result

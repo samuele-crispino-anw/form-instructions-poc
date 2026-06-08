@@ -52,6 +52,19 @@ def classify_fastpath(
     return "netto", f"top1 {top1:.1f}, margine {margine}"
 
 
+def served_page_range(
+    page_start: int, page_end: int, node_starts: list[int]
+) -> tuple[int, int]:
+    """Range di pagine da SERVIRE per una foglia: estende fino all'inizio del nodo successivo.
+
+    Il contenuto di un rigo può proseguire sulla pagina dove inizia il rigo seguente (heading e
+    coda condividono la pagina): servire fino a quella pagina inclusa evita di troncare la risposta.
+    Il range del nodo (per display/navigazione) resta invariato; cambia solo cosa si serve.
+    """
+    later = [p for p in node_starts if p > page_start]
+    return (page_start, min(later) if later else page_end)
+
+
 def build_served_context(target_title: str, target_text: str, pins: list[Pin]) -> str:
     """Assembla il contesto da servire: prima le regole governanti (pin), poi la voce."""
     parts: list[str] = []
