@@ -17,7 +17,7 @@ from poc_istruzioni.serving.retrieval import (
     RetrievalResult,
     build_served_context,
     classify_fastpath,
-    navigate_llm,
+    navigate_hierarchical,
     served_page_range,
 )
 from poc_istruzioni.serving.summaries import _page_text
@@ -61,20 +61,14 @@ def run_retrieval(ctx, query: str, doc_id: str) -> RetrievalResult | None:
     if gate == "netto":
         method, target = "fast_path", ranked[0][0]
     else:
-        shortlist = [nid for nid, _ in ranked[: cfg.top_k]] or [
-            n.id for n in nodes if n.kind in ("sezione", "rigo")
-        ]
-        cand = [
-            (n.id, n.kind, n.title, summaries.get(n.id) or "")
-            for n in nodes if n.id in set(shortlist)
-        ]
+        # fallback: navigazione gerarchica sull'albero (disaccoppiata dal fast-path lessicale)
         client = LlmClient(ctx.conn, ctx.prices, settings=ctx.settings)
-        target, res = navigate_llm(
-            query, cand, client,
-            model=ctx.settings.model_for("router"), system_prompt=load_prompt("nav_router"),
+        target, nav_cost, _path = navigate_hierarchical(
+            client, query, nodes, summaries,
+            model=ctx.settings.model_for("router"), system_prompt=load_prompt("nav_descent"),
         )
-        cost += res.cost.usd
-        method = "navigation_llm" if target is not None else "refused"
+        cost += nav_cost
+        method = "navigation_descent" if target is not None else "refused"
 
     result = RetrievalResult(
         query=query, gate=gate, reason=reason, method=method,

@@ -1,11 +1,67 @@
 """Test della logica pura dell'orchestratore retrieval (gate + assembly)."""
 
+from types import SimpleNamespace
+
+from poc_istruzioni.serving.nodes import Node
 from poc_istruzioni.serving.pins import Pin
 from poc_istruzioni.serving.retrieval import (
     build_served_context,
     classify_fastpath,
+    navigate_hierarchical,
     served_page_range,
 )
+
+
+class _FakeClient:
+    """Client LLM finto: restituisce in sequenza le risposte scriptate."""
+
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.calls = 0
+
+    def complete(self, **kw):
+        text = self.answers[self.calls]
+        self.calls += 1
+        return SimpleNamespace(text=text, cost=SimpleNamespace(usd=0.001))
+
+
+def _tree():
+    return [
+        Node(1, None, "quadro", 1, "QUADRO RP", 69, 133, 1),
+        Node(2, 1, "sezione", 2, "SEZIONE I spese 19%", 74, 89, 2),
+        Node(3, 1, "sezione", 2, "SEZIONE II deduzioni", 90, 97, 3),
+        Node(4, 2, "rigo", 3, "Rigo RP1 Spese sanitarie", 75, 75, 4),
+        Node(5, 2, "rigo", 3, "Rigo RP7 Interessi mutuo", 78, 79, 5),
+    ]
+
+
+def test_navigate_hierarchical_scende_fino_alla_foglia() -> None:
+    nodes = _tree()
+    summ = {n.id: n.title for n in nodes}
+    # auto-descend del quadro (figlio unico), poi sceglie SEZIONE I (2), poi Rigo RP1 (4)
+    client = _FakeClient(["2", "4"])
+    target, cost, path = navigate_hierarchical(client, "spese mediche", nodes, summ,
+                                               model="m", system_prompt="p")
+    assert target == 4 and path == [1, 2, 4]
+    assert client.calls == 2 and round(cost, 3) == 0.002  # 1 call per livello, quadro auto
+
+
+def test_navigate_hierarchical_nessuna_rifiuta() -> None:
+    nodes = _tree()
+    summ = {n.id: n.title for n in nodes}
+    client = _FakeClient(["NESSUNA"])  # nessuna sezione pertinente -> rifiuto
+    target, _c, _p = navigate_hierarchical(client, "quadro RW estero", nodes, summ,
+                                           model="m", system_prompt="p")
+    assert target is None
+
+
+def test_navigate_hierarchical_ferma_a_livello_sezione() -> None:
+    nodes = _tree()
+    summ = {n.id: n.title for n in nodes}
+    client = _FakeClient(["2", "FERMA"])  # scende a SEZIONE I, poi si ferma lì
+    target, _c, path = navigate_hierarchical(client, "panoramica spese 19%", nodes, summ,
+                                             model="m", system_prompt="p")
+    assert target == 2 and path == [1, 2]
 
 
 def test_gate_netto_quando_top1_alto_e_distante() -> None:

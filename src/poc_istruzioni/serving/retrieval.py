@@ -76,6 +76,66 @@ def build_served_context(target_title: str, target_text: str, pins: list[Pin]) -
     return "\n\n".join(parts)
 
 
+def navigate_hierarchical(
+    client: LlmClient,
+    query: str,
+    nodes: list,
+    summaries: dict[int, str],
+    *,
+    model: str,
+    system_prompt: str,
+    max_depth: int = 6,
+) -> tuple[int | None, float, list[int]]:
+    """Naviga l'albero dall'alto: a ogni livello l'LLM sceglie in quale figlio scendere.
+
+    Decoupled dal fast-path lessicale: l'LLM vede i summary dei figli del nodo corrente e risponde
+    col numero del figlio, FERMA (la voce corrente è quella giusta) o NESSUNA (rifiuta).
+    Ritorna (node_id scelto | None, costo_usd, percorso). Con un solo figlio scende senza LLM.
+    """
+    by_id = {n.id: n for n in nodes}
+    children: dict[int | None, list] = {}
+    for n in nodes:
+        children.setdefault(n.parent_id, []).append(n)
+
+    current = None
+    cost = 0.0
+    path: list[int] = []
+    for _ in range(max_depth):
+        kids = children.get(current.id if current else None, [])
+        if not kids:
+            break  # foglia raggiunta
+        if len(kids) == 1:  # unica discesa possibile: scendi senza spendere un LLM
+            current = kids[0]
+            path.append(current.id)
+            continue
+        listing = "\n".join(
+            f"[{k.id}] ({k.kind}) {k.title}\n    {summaries.get(k.id) or ''}" for k in kids
+        )
+        user = (
+            f"Domanda: {query}\n\nVoce corrente: {current.title if current else '(radice)'}\n\n"
+            f"Sotto-voci:\n{listing}\n\nScendi nella sotto-voce più pertinente (rispondi col suo "
+            "numero), oppure FERMA se la voce corrente è già quella giusta, oppure NESSUNA se "
+            "nessuna è pertinente."
+        )
+        res = client.complete(
+            scopo="router:descent", model=model, system=system_prompt,
+            messages=[{"role": "user", "content": user}], max_tokens=12,
+        )
+        cost += res.cost.usd
+        text = res.text.upper()
+        if "NESSUNA" in text:
+            return None, cost, path
+        if "FERMA" in text:
+            return (current.id if current else None), cost, path
+        m = re.search(r"\d+", res.text)
+        nid = int(m.group()) if m else None
+        if nid is None or nid not in {k.id for k in kids}:
+            return (current.id if current else None), cost, path
+        current = by_id[nid]
+        path.append(nid)
+    return (current.id if current else None), cost, path
+
+
 def navigate_llm(
     query: str,
     candidates: list[tuple[int, str, str, str]],
