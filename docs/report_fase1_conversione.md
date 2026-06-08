@@ -71,8 +71,9 @@ codici 12/13/14/55/57 preservati, convenzione "Colonne:"). Output fedele e strut
 
 ## 7. Costo complessivo del PoC finora
 
-Il run di conversione è la voce principale; il totale del PoC (incl. esplorazioni, spike, misure,
-review) è tracciato dal ledger (`poc report costs`). Il run completo: **$15,30**.
+Il run di conversione è la voce principale (**$15,30**). Il **totale PoC a oggi**, da ledger
+(`poc report costs`, 257 chiamate), è **$18,39 / €16,00** — la differenza (~$3) è lo sviluppo
+esplorativo (calibrazione, spike A vs B, misura E Haiku, run pagine insidiose, identità, re-run).
 
 ## 8. Stato e prossimi passi
 
