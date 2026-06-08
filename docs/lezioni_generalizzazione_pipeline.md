@@ -192,6 +192,30 @@ scaling — non solo i bug, ma anche le assunzioni smentite dai dati.
 
 ---
 
+## L10 — Retrieval: discesa gerarchica LLM ora, embeddings allo scaling
+
+- **Contesto:** il fallback iniziale era "fast-path lessicale → re-rank LLM sulla shortlist". L'eval
+  (rp-009: "documentare l'acquisto di medicinali") ha mostrato il limite: la parola generica
+  "acquisto" (nei titoli di molti righi, peso 3×) seppelliva il termine discriminante "medicinali"
+  (solo nel summary di RP1, peso ~5); RP1 fuori shortlist → l'LLM non poteva recuperarlo, perché
+  era un *re-ranker della shortlist lessicale*, non una ricerca semantica.
+- **Correzione:** fallback = **discesa gerarchica guidata dall'LLM** sull'albero (a ogni livello
+  l'LLM sceglie il figlio sui summary), **disaccoppiata dal lessico**. Il fast-path "netto" resta
+  la corsia veloce a costo zero per le query chiaramente lessicali.
+- **Principio (generale):**
+  1. Un re-ranker LLM su una shortlist lessicale **non può recuperare** ciò che il lessico non
+     porta a galla: serve un canale di routing indipendente dal match di parole.
+  2. La **discesa gerarchica LLM** sfrutta l'albero + i summary scope-aware ed è la scelta giusta
+     finché l'albero è piccolo (poche chiamate, summary corti per livello).
+  3. Gli **embeddings** guadagnano senso **allo scaling** (molti documenti / migliaia di nodi):
+     fanno il *recall* per livello (restringono i candidati) e l'LLM *sceglie*. Non sono il punto
+     di partenza per un singolo documento. Decidere sui pattern di query e sulla dimensione
+     dell'albero, non in anticipo.
+  4. Lo scoring lessicale **tf×idf con peso-titolo** può far vincere parole-azione generiche
+     ("acquisto") sui nomi discriminanti: il peso-titolo va calibrato (vedi anche [[L9]]).
+
+---
+
 ## Indice rapido dei principi generali (checklist per la pipeline futura)
 
 1. Pattern strutturali del dominio **configurabili per famiglia** di documento (non hardcoded).
