@@ -1,0 +1,266 @@
+# Golden set di evaluation per la fetta RP (FR-E). Curato a mano, versionato.
+# Stratificato per: categoria, difficolta, hops (parti necessarie), answerable, expected_target.
+# Scopo: confrontare servi-intero vs navigazione+pin e far emergere i punti deboli.
+# NB: bozza v1 generata dall'assistente; l'owner (umano) validera'/aggiungera' domande reali.
+#
+# categoria:
+#   fattuale        - un singolo fatto puntuale (1 voce)
+#   procedurale     - "come si fa" multi-passo
+#   pin_dependent   - richiede una regola governante ereditata (sezione/quadro), non nel rigo
+#   disambiguazione - query lessicalmente ambigua: il fast-path inganna, serve la nav-LLM
+#   aggregazione    - richiede piu' voci/codici insieme (multi-hop ampio)
+#   fuori_corpus    - risposta NON presente nella fetta RP -> atteso RIFIUTO
+# hops: numero approssimato di parti distinte necessarie (0 per i fuori_corpus)
+
+cases:
+  # ---- fattuale (1 hop) ----
+  - id: rp-001
+    categoria: fattuale
+    difficolta: facile
+    hops: 1
+    answerable: true
+    domanda: "Qual è la percentuale di detrazione delle spese sanitarie?"
+    expected_target: "RP1"
+    must_include: ["19"]
+  - id: rp-002
+    categoria: fattuale
+    difficolta: facile
+    hops: 1
+    answerable: true
+    domanda: "A quale rigo vanno indicati gli interessi sul mutuo ipotecario per l'abitazione principale?"
+    expected_target: "RP7"
+    must_include: ["RP7"]
+  - id: rp-003
+    categoria: fattuale
+    difficolta: facile
+    hops: 1
+    answerable: true
+    domanda: "Le spese veterinarie sono detraibili? Con quale codice?"
+    expected_target: "codice 29"
+    must_include: ["29"]
+  - id: rp-004
+    categoria: fattuale
+    difficolta: media
+    hops: 1
+    answerable: true
+    domanda: "Con quale codice si indicano le spese per la frequenza di asili nido?"
+    expected_target: "codice 33"
+    must_include: ["33"]
+  - id: rp-005
+    categoria: fattuale
+    difficolta: media
+    hops: 1
+    answerable: true
+    domanda: "Dove indico i redditi prodotti a Campione d'Italia?"
+    expected_target: "RP90"
+    must_include: ["Campione"]
+  - id: rp-006
+    categoria: fattuale
+    difficolta: media
+    hops: 1
+    answerable: true
+    domanda: "Esiste una detrazione per le spese di mantenimento dei cani guida?"
+    expected_target: "RP82"
+    must_include: []
+  - id: rp-007
+    categoria: fattuale
+    difficolta: facile
+    hops: 1
+    answerable: true
+    domanda: "C'è una detrazione per gli inquilini con contratto di locazione dell'abitazione principale?"
+    expected_target: "RP71"
+    must_include: []
+  - id: rp-008
+    categoria: fattuale
+    difficolta: difficile
+    hops: 1
+    answerable: true
+    domanda: "Con quale codice si indicano le spese di intermediazione immobiliare?"
+    expected_target: "codice 17"
+    must_include: ["17"]
+
+  # ---- procedurale (multi-passo) ----
+  - id: rp-009
+    categoria: procedurale
+    difficolta: media
+    hops: 2
+    answerable: true
+    domanda: "Come devo documentare l'acquisto di medicinali per poterli detrarre?"
+    expected_target: "RP1"
+    must_include: ["scontrino"]
+  - id: rp-010
+    categoria: procedurale
+    difficolta: difficile
+    hops: 2
+    answerable: true
+    domanda: "Come si rateizzano le spese sanitarie quando superano una certa soglia?"
+    expected_target: "RP1"
+    must_include: ["rate"]
+  - id: rp-011
+    categoria: procedurale
+    difficolta: media
+    hops: 2
+    answerable: true
+    domanda: "Come indico le spese per interventi di recupero del patrimonio edilizio?"
+    expected_target: "Sezione III A"
+    must_include: []
+  - id: rp-012
+    categoria: procedurale
+    difficolta: difficile
+    hops: 2
+    answerable: true
+    domanda: "Come compilo i righi relativi ai contributi versati ai fondi pensione?"
+    expected_target: "RP27"
+    must_include: []
+  - id: rp-013
+    categoria: procedurale
+    difficolta: media
+    hops: 2
+    answerable: true
+    domanda: "Quali dati catastali dell'immobile devo indicare per fruire della detrazione edilizia?"
+    expected_target: "Sezione III B"
+    must_include: []
+
+  # ---- pin_dependent (regola governante ereditata) ----
+  - id: rp-014
+    categoria: pin_dependent
+    difficolta: media
+    hops: 2
+    answerable: true
+    domanda: "Per detrarre i medicinali serve il pagamento tracciabile o posso pagare in contanti?"
+    expected_target: "SEZIONE I"
+    must_include: []
+  - id: rp-015
+    categoria: pin_dependent
+    difficolta: difficile
+    hops: 2
+    answerable: true
+    domanda: "C'è una franchigia sulle spese sanitarie? Di quanto?"
+    expected_target: "RP1"
+    must_include: ["129,11"]
+  - id: rp-016
+    categoria: pin_dependent
+    difficolta: difficile
+    hops: 2
+    answerable: true
+    domanda: "Le spese sanitarie vanno indicate al netto della franchigia o per intero?"
+    expected_target: "SEZIONE I"
+    must_include: ["intero"]
+  - id: rp-017
+    categoria: pin_dependent
+    difficolta: media
+    hops: 2
+    answerable: true
+    domanda: "Chi si intende per familiare a carico ai fini delle spese sanitarie?"
+    expected_target: "SEZIONE I"
+    must_include: []
+
+  # ---- disambiguazione (lessico ambiguo, serve la nav-LLM) ----
+  - id: rp-018
+    categoria: disambiguazione
+    difficolta: media
+    hops: 1
+    answerable: true
+    domanda: "Che detrazione spetta per l'affitto se sono un inquilino?"
+    expected_target: "Sezione V"
+    must_include: []
+  - id: rp-019
+    categoria: disambiguazione
+    difficolta: difficile
+    hops: 1
+    answerable: true
+    domanda: "Posso detrarre le spese per l'affitto se sono uno studente universitario fuori sede?"
+    expected_target: "codice 18"
+    must_include: ["18"]
+  - id: rp-020
+    categoria: disambiguazione
+    difficolta: difficile
+    hops: 1
+    answerable: true
+    domanda: "Ci sono agevolazioni per l'acquisto di mobili dopo una ristrutturazione?"
+    expected_target: "RP57"
+    must_include: []
+  - id: rp-021
+    categoria: disambiguazione
+    difficolta: media
+    hops: 1
+    answerable: true
+    domanda: "Dove indico le spese per l'arredo se sono una giovane coppia?"
+    expected_target: "RP58"
+    must_include: []
+
+  # ---- aggregazione (multi-hop ampio) ----
+  - id: rp-022
+    categoria: aggregazione
+    difficolta: difficile
+    hops: 3
+    answerable: true
+    domanda: "Quali codici si usano nei righi da RP8 a RP13 per le spese di istruzione e universitarie?"
+    expected_target: "RP8"
+    must_include: ["12", "13"]
+  - id: rp-023
+    categoria: aggregazione
+    difficolta: difficile
+    hops: 3
+    answerable: true
+    domanda: "Quali tipologie di erogazioni liberali posso indicare tra le altre spese detraibili?"
+    expected_target: "RP8"
+    must_include: []
+  - id: rp-024
+    categoria: aggregazione
+    difficolta: media
+    hops: 2
+    answerable: true
+    domanda: "Quali spese e oneri danno diritto alla deduzione dal reddito complessivo?"
+    expected_target: "SEZIONE II"
+    must_include: []
+  - id: rp-025
+    categoria: aggregazione
+    difficolta: difficile
+    hops: 2
+    answerable: true
+    domanda: "Quali interventi rientrano nelle spese per il risparmio energetico?"
+    expected_target: "Sezione IV"
+    must_include: []
+
+  # ---- fuori_corpus (atteso RIFIUTO) ----
+  - id: rp-026
+    categoria: fuori_corpus
+    difficolta: media
+    hops: 0
+    answerable: false
+    domanda: "Come si calcola l'IRPEF lorda nel quadro RN?"
+    expected_target: null
+    must_include: []
+  - id: rp-027
+    categoria: fuori_corpus
+    difficolta: media
+    hops: 0
+    answerable: false
+    domanda: "Dove indico i redditi da lavoro dipendente percepiti nell'anno?"
+    expected_target: null
+    must_include: []
+  - id: rp-028
+    categoria: fuori_corpus
+    difficolta: difficile
+    hops: 0
+    answerable: false
+    domanda: "Come compilo il quadro RW per gli investimenti finanziari detenuti all'estero?"
+    expected_target: null
+    must_include: []
+  - id: rp-029
+    categoria: fuori_corpus
+    difficolta: media
+    hops: 0
+    answerable: false
+    domanda: "Qual è la scadenza per il versamento del saldo IRPEF?"
+    expected_target: null
+    must_include: []
+  - id: rp-030
+    categoria: fuori_corpus
+    difficolta: difficile
+    hops: 0
+    answerable: false
+    domanda: "Qual è l'aliquota IVA applicata all'acquisto dei medicinali in farmacia?"
+    expected_target: null
+    must_include: []

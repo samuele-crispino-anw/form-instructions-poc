@@ -253,6 +253,22 @@ def get_nodes(conn: sqlite3.Connection, doc_id: str) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def replace_eval_cases(conn: sqlite3.Connection, cases: list) -> None:
+    """Sostituisce il golden set (FR-E). cases con .id/.categoria/.domanda/.attesa_json()."""
+    conn.execute("DELETE FROM eval_cases")
+    for c in cases:
+        conn.execute(
+            "INSERT OR REPLACE INTO eval_cases (id, categoria, domanda, attesa_json) "
+            "VALUES (?, ?, ?, ?)",
+            (c.id, c.categoria, c.domanda, c.attesa_json()),
+        )
+    conn.commit()
+
+
+def get_eval_cases(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM eval_cases ORDER BY id").fetchall()
+
+
 def replace_pins(
     conn: sqlite3.Connection, doc_id: str, pins: list, *, source: str, run_id: str, ts: str
 ) -> None:

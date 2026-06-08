@@ -23,6 +23,9 @@ app.add_typer(review_app, name="review")
 nav_app = typer.Typer(help="Navigazione gerarchica (Fase 2): albero dei nodi, retrieval.")
 app.add_typer(nav_app, name="nav")
 
+eval_app = typer.Typer(help="Evaluation (FR-E): golden set e confronto retrieval.")
+app.add_typer(eval_app, name="eval")
+
 # Default del corpus pilota: Redditi PF Fascicolo 1, edizione 2026.
 _PILOT_PDF = "PF1_istruzioni_2026_agg 13 05 2026.pdf"
 
@@ -1088,6 +1091,48 @@ def nav_ask(
     if reasoning:
         typer.echo(f"(ragionamento registrato: {len(reasoning)} char)")
     typer.echo(f"costo: ${r.cost_usd:.4f} (€{eur}) · log: {log_path}")
+
+
+@eval_app.command("load")
+def eval_load(
+    path: str = typer.Option("config/eval/rp_golden.yaml", help="YAML del golden set."),
+) -> None:
+    """Carica il golden set nel DB (tabella eval_cases) e mostra la stratificazione."""
+    from poc_istruzioni.bootstrap import build_context, resolve_path
+    from poc_istruzioni.db.repositories import replace_eval_cases
+    from poc_istruzioni.eval.dataset import load_cases, stratification
+
+    ctx = build_context()
+    cases = load_cases(resolve_path(path))
+    replace_eval_cases(ctx.conn, cases)
+    typer.echo(f"Caricati {len(cases)} casi nel golden set.")
+    for dim, counter in stratification(cases).items():
+        dist = "  ".join(f"{k}={v}" for k, v in sorted(counter.items(), key=lambda x: str(x[0])))
+        typer.echo(f"  {dim:12}: {dist}")
+
+
+@eval_app.command("list")
+def eval_list() -> None:
+    """Elenca i casi del golden set caricati nel DB."""
+    import json
+
+    from poc_istruzioni.bootstrap import build_context
+    from poc_istruzioni.db.repositories import get_eval_cases
+
+    ctx = build_context()
+    rows = get_eval_cases(ctx.conn)
+    if not rows:
+        typer.echo("Golden set vuoto: esegui `poc eval load`.")
+        raise typer.Exit(1)
+    for r in rows:
+        a = json.loads(r["attesa_json"])
+        flag = "" if a.get("answerable", True) else "  [NO-ANSWER]"
+        tgt = a.get("expected_target") or "—"
+        typer.echo(
+            f"  {r['id']}  {r['categoria']:14} d={a.get('difficolta'):8} "
+            f"hops={a.get('hops')}  ->{tgt:14}{flag}  {r['domanda'][:60]}"
+        )
+    typer.echo(f"\n{len(rows)} casi.")
 
 
 @app.command()
