@@ -72,7 +72,7 @@ def judge_answer(
             "La risposta affronta la domanda ed è coerente con i fatti-chiave? "
             "Rispondi SOLO con una di: CORRETTO, PARZIALE, ERRATO."
         )
-        valid = {"CORRETTO", "PARZIALE", "ERRATO"}
+        valid = ["ERRATO", "PARZIALE", "CORRETTO"]  # più specifici/negativi prima
     else:
         user = (
             f"DOMANDA (la cui risposta NON è nel corpus fornito): {question}\n\n"
@@ -80,12 +80,12 @@ def judge_answer(
             "Il sistema ha correttamente RIFIUTATO (dichiarando che le istruzioni non contengono "
             "la risposta) invece di inventare? Rispondi SOLO con una di: RIFIUTO_OK, NON_RIFIUTATO."
         )
-        valid = {"RIFIUTO_OK", "NON_RIFIUTATO"}
+        valid = ["NON_RIFIUTATO", "RIFIUTO_OK"]
 
     res = client.complete(
         scopo="eval:judge", model=model, system=system_prompt,
-        messages=[{"role": "user", "content": user}], max_tokens=8,
+        messages=[{"role": "user", "content": user}], max_tokens=16,
     )
-    m = re.search(r"[A-Z_]{4,}", res.text.upper())
-    verdict = m.group() if m and m.group() in valid else "INDETERMINATO"
+    text = res.text.upper()
+    verdict = next((v for v in valid if v in text), "INDETERMINATO")
     return verdict, res.cost.usd

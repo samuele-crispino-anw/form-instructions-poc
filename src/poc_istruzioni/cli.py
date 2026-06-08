@@ -1097,6 +1097,12 @@ def eval_run(
     cases = load_all(resolve_path("config/eval"))
     if origin:
         cases = [c for c in cases if c.origin == origin]
+    elif limit:  # con --limit, bilancia il subset tra le origini (interleaving)
+        from itertools import zip_longest
+        by_o: dict[str, list] = {}
+        for c in cases:
+            by_o.setdefault(c.origin, []).append(c)
+        cases = [c for grp in zip_longest(*by_o.values()) for c in grp if c is not None]
     if limit:
         cases = cases[:limit]
     arms = ["servi_intero", "navigazione"] if arm == "both" else [arm]
