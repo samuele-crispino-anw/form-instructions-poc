@@ -269,6 +269,30 @@ def get_eval_cases(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM eval_cases ORDER BY id").fetchall()
 
 
+def insert_eval_result(
+    conn: sqlite3.Connection, run_id: str, case_id: str, config: str, esiti_json: str
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO eval_results (run_id, case_id, config, esiti_json) "
+        "VALUES (?, ?, ?, ?)",
+        (run_id, case_id, config, esiti_json),
+    )
+    conn.commit()
+
+
+def get_eval_results(conn: sqlite3.Connection, run_id: str) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM eval_results WHERE run_id = ? ORDER BY case_id, config", (run_id,)
+    ).fetchall()
+
+
+def latest_eval_run(conn: sqlite3.Connection) -> str | None:
+    row = conn.execute(
+        "SELECT run_id FROM eval_results ORDER BY rowid DESC LIMIT 1"
+    ).fetchone()
+    return row["run_id"] if row else None
+
+
 def replace_pins(
     conn: sqlite3.Connection, doc_id: str, pins: list, *, source: str, run_id: str, ts: str
 ) -> None:

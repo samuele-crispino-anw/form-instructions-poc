@@ -858,86 +858,14 @@ def nav_match(
 
 
 def _run_retrieval(ctx, query: str, doc_id: str):
-    """Orchestrazione: fast-path D3 -> gate -> (navigazione-LLM) -> pin -> contesto servito.
+    """Wrapper CLI sull'orchestratore (RetrievalResult); errore parlante se manca l'albero."""
+    from poc_istruzioni.serving.orchestrator import run_retrieval
 
-    Ritorna un RetrievalResult popolato (riusato da `nav retrieve` e `nav ask`).
-    """
-    from poc_istruzioni.bootstrap import resolve_path
-    from poc_istruzioni.config import load_aliases, load_prompt
-    from poc_istruzioni.db.repositories import get_keywords, get_nodes, get_pins
-    from poc_istruzioni.llm.client import LlmClient
-    from poc_istruzioni.serving.keywords import IndexEntry, score_nodes
-    from poc_istruzioni.serving.nodes import Node
-    from poc_istruzioni.serving.pins import Pin, collect_pins
-    from poc_istruzioni.serving.retrieval import (
-        RetrievalResult,
-        build_served_context,
-        classify_fastpath,
-        navigate_llm,
-    )
-    from poc_istruzioni.serving.summaries import _page_text
-
-    rows = get_nodes(ctx.conn, doc_id)
-    if not rows:
+    r = run_retrieval(ctx, query, doc_id)
+    if r is None:
+        typer.echo("Nessun nodo: esegui prima `poc nav tree`/`index`/`pins`.")
         raise typer.Exit(1)
-    nodes = [
-        Node(id=r["id"], parent_id=r["parent_id"], kind=r["kind"], level=r["level"],
-             title=r["title"], page_start=r["page_start"], page_end=r["page_end"], ord=r["ord"])
-        for r in rows
-    ]
-    by_id = {n.id: n for n in nodes}
-    summaries = {r["id"]: r["summary"] for r in rows}
-    entries = [
-        IndexEntry(term=r["term"], node_id=r["node_id"], weight=r["weight"])
-        for r in get_keywords(ctx.conn, doc_id)
-    ]
-    pins = [
-        Pin(owner_node_id=r["owner_node_id"], owner_kind=r["owner_kind"],
-            owner_title=r["owner_title"], text=r["text"])
-        for r in get_pins(ctx.conn, doc_id)
-    ]
-    cfg = ctx.settings.retrieval
-    ranked = score_nodes(query, entries, load_aliases())
-    gate, reason = classify_fastpath(ranked, min_abs=cfg.gate_min_abs, margin=cfg.gate_margin)
-
-    cost = 0.0
-    if gate == "netto":
-        method, target = "fast_path", ranked[0][0]
-    else:
-        shortlist = [nid for nid, _ in ranked[: cfg.top_k]] or [
-            n.id for n in nodes if n.kind in ("sezione", "rigo")
-        ]
-        cand = [
-            (n.id, n.kind, n.title, summaries.get(n.id) or "")
-            for n in nodes if n.id in set(shortlist)
-        ]
-        client = LlmClient(ctx.conn, ctx.prices, settings=ctx.settings)
-        target, res = navigate_llm(
-            query, cand, client,
-            model=ctx.settings.model_for("router"), system_prompt=load_prompt("nav_router"),
-        )
-        cost += res.cost.usd
-        method = "navigation_llm" if target is not None else "refused"
-
-    result = RetrievalResult(
-        query=query, gate=gate, reason=reason, method=method,
-        target_node_id=target, candidates=ranked[: cfg.top_k], cost_usd=cost,
-    )
-    if target is not None:
-        t = by_id[target]
-        pages_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "pages"
-        md = {}
-        for p in range(t.page_start, t.page_end + 1):
-            f = pages_dir / f"p{p:03d}.md"
-            if f.exists():
-                md[p] = f.read_text(encoding="utf-8")
-        result.pins = collect_pins(target, nodes, pins)
-        result.target_title = t.title
-        result.target_pages = f"{t.page_start}-{t.page_end}"
-        result.served_text = build_served_context(
-            t.title, _page_text(md, t.page_start, t.page_end), result.pins
-        )
-    return result
+    return r
 
 
 def _persist_query_trace(ctx, qid: str, query: str, r, *, eur: float, extra: dict | None = None):
@@ -1142,6 +1070,95 @@ def eval_list() -> None:
             f"{r['domanda'][:55]}"
         )
     typer.echo(f"\n{len(rows)} casi.")
+
+
+@eval_app.command("run")
+def eval_run(
+    arm: str = typer.Option("both", help="Arm: both | navigazione | servi_intero."),
+    origin: str = typer.Option("", help="Filtra per origine: kb_derived | external (vuoto=tutte)."),
+    limit: int = typer.Option(0, help="Solo i primi N casi (0 = tutti). Utile per mini-run."),
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+    frm: int = typer.Option(69, "--from", help="Prima pagina del quadro (servi-intero)."),
+    to: int = typer.Option(133, "--to", help="Ultima pagina del quadro (servi-intero)."),
+    max_cost: float = typer.Option(8.0, help="Si ferma se il costo supera questa soglia ($)."),
+) -> None:
+    """Esegue l'eval (per arm) sui 60 casi, giudica e persiste i risultati; stampa il report."""
+    import json
+
+    from poc_istruzioni.bootstrap import build_context, resolve_path
+    from poc_istruzioni.config import load_prompt
+    from poc_istruzioni.db.repositories import insert_eval_result
+    from poc_istruzioni.eval.dataset import load_all
+    from poc_istruzioni.eval.report import format_table, summarize
+    from poc_istruzioni.eval.runner import build_full_quadro_context, run_case
+    from poc_istruzioni.provenance import new_run_id
+
+    ctx = build_context()
+    cases = load_all(resolve_path("config/eval"))
+    if origin:
+        cases = [c for c in cases if c.origin == origin]
+    if limit:
+        cases = cases[:limit]
+    arms = ["servi_intero", "navigazione"] if arm == "both" else [arm]
+    full_context = build_full_quadro_context(ctx, doc_id, frm, to)
+    answer_system, judge_system = load_prompt("answer"), load_prompt("eval_judge")
+    answer_model, judge_model = ctx.settings.model_for("answer"), ctx.settings.model_for("eval")
+
+    run_id = new_run_id()
+    results: list[dict] = []
+    total = 0.0
+    typer.echo(f"Run {run_id}: {len(cases)} casi x {len(arms)} arm. Contesto servi-intero: "
+               f"{len(full_context)} char.\n")
+    for c in cases:
+        for a in arms:
+            res = run_case(
+                ctx, c, a, doc_id=doc_id, full_context=full_context,
+                answer_system=answer_system, judge_system=judge_system,
+                answer_model=answer_model, judge_model=judge_model,
+            )
+            insert_eval_result(ctx.conn, run_id, c.id, a, json.dumps(res, ensure_ascii=False))
+            results.append(res)
+            total += res["cost_usd"]
+            mark = "ok" if res["correct"] else "NO"
+            typer.echo(f"  {c.id} [{a:13}] {res['verdict']:14} {mark}  "
+                       f"${total:.3f}  ({c.origin})")
+            if total > max_cost:
+                typer.echo(f"\n⚠️  Costo ${total:.2f} > soglia ${max_cost}. Mi fermo. "
+                           f"Run parziale salvato: {run_id}")
+                raise typer.Exit(0)
+
+    typer.echo(f"\n=== REPORT (run {run_id}, costo ${total:.4f}) ===")
+    typer.echo(format_table(summarize(results, ["arm"]), "arm"))
+    typer.echo("\nper origine:")
+    typer.echo(format_table(summarize(results, ["arm", "origin"]), "arm · origin"))
+
+
+@eval_app.command("report")
+def eval_report(
+    run_id: str = typer.Option("", help="Run da analizzare (vuoto = ultima)."),
+) -> None:
+    """Riaggrega un run di eval salvato: arm, origine, categoria, difficoltà."""
+    import json
+
+    from poc_istruzioni.bootstrap import build_context
+    from poc_istruzioni.db.repositories import get_eval_results, latest_eval_run
+    from poc_istruzioni.eval.report import format_table, summarize
+
+    ctx = build_context()
+    rid = run_id or latest_eval_run(ctx.conn)
+    if not rid:
+        typer.echo("Nessun run di eval salvato: esegui `poc eval run`.")
+        raise typer.Exit(1)
+    results = [json.loads(r["esiti_json"]) for r in get_eval_results(ctx.conn, rid)]
+    typer.echo(f"=== REPORT run {rid} — {len(results)} risultati ===")
+    for keys, label in (
+        (["arm"], "arm"),
+        (["arm", "origin"], "arm · origin"),
+        (["arm", "categoria"], "arm · categoria"),
+        (["arm", "difficolta"], "arm · difficolta"),
+    ):
+        typer.echo("")
+        typer.echo(format_table(summarize(results, keys), label))
 
 
 @app.command()
