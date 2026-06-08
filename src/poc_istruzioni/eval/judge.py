@@ -41,13 +41,33 @@ def must_include_coverage(answer: str, must_include: list[str]) -> tuple[int, in
     return (hit, len(must_include))
 
 
+def _anchors(expected: str) -> list[str]:
+    """Estrae gli identificatori-nodo dall'expected_target verboso: RP\\d+, codice N, Sezione X."""
+    e = _norm(expected)
+    out = re.findall(r"rp\s*\d+", e)                                  # righi: RP71, RP51...
+    out = [re.sub(r"rp\s*(\d+)", r"rp\1", a) for a in out]            # normalizza "rp 71" -> "rp71"
+    out += [f"codice {n}" for n in re.findall(r"cod(?:ice|ici)\s*(\d+)", e)]
+    sez = re.search(r"sezione\s+[ivx]+(?:\s*-?\s*[a-z]\b)?", e)       # Sezione III / III-B
+    if sez:
+        out.append(re.sub(r"[\s-]+", " ", sez.group()).strip())
+    return out
+
+
 def retrieval_hit(expected_target: str | None, target_title: str | None) -> bool | None:
-    """Il retrieval ha centrato la voce attesa? None se non applicabile (es. fuori_corpus)."""
+    """Il retrieval ha centrato la voce attesa? None se non applicabile (es. fuori_corpus).
+
+    Confronta gli identificatori-nodo (non la stringa intera), così i qualificatori verbosi
+    dell'expected ("..., codice 4", "(art. 188-bis)") non producono falsi miss.
+    """
     if not expected_target:
         return None
     if not target_title:
         return False
-    return _norm(expected_target) in _norm(target_title)
+    t = re.sub(r"rp\s*(\d+)", r"rp\1", _norm(target_title))
+    anchors = _anchors(expected_target)
+    if not anchors:  # nessun identificatore estraibile -> fallback al substring intero
+        return _norm(expected_target) in t
+    return any(re.search(rf"\b{re.escape(a)}\b", t) for a in anchors)
 
 
 def judge_answer(

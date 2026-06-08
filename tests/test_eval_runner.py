@@ -24,6 +24,16 @@ def test_retrieval_hit() -> None:
     assert retrieval_hit("RP7", None) is False            # retrieval ha rifiutato
 
 
+def test_retrieval_hit_ignora_qualificatori_verbosi() -> None:
+    # i casi che la vecchia metrica contava come miss ma che erano nodo-giusto
+    assert retrieval_hit("Rigo RP71, codice 4", "Rigo RP71 Inquilini di alloggi") is True
+    assert retrieval_hit("Rigo RP90 (art. 188-bis TUIR)", "Rigo RP90 — Redditi prodotti") is True
+    assert retrieval_hit("Sezione III-B (RP51-RP53)", "Sezione III B – Dati catastali") is True
+    assert retrieval_hit("Righi RP51-RP52, col. 7", "Righi RP51 e RP52 - Dati catastali") is True
+    # word-boundary: RP1 non deve matchare RP10
+    assert retrieval_hit("RP1", "Rigo RP10 Spese") is False
+
+
 def test_summarize_calcola_metriche_per_gruppo() -> None:
     results = [
         {"arm": "navigazione", "origin": "external", "correct": True,
