@@ -1,0 +1,300 @@
+# Dataset domande Quadro RP — REDDITI PERSONE FISICHE 2026 (Fascicolo 1)
+# Fonte: fetta fornita = pagg. 110-111 (Sez. III-A/III-B), 128-129 (Sez. V),
+#        132-133 (codici altre detrazioni RN17, Sez. VII Campione d'Italia).
+#
+# Stratificato per: categoria, difficolta, hops (parti necessarie), answerable, expected_target.
+# Scopo: confrontare servi-intero vs navigazione+pin e far emergere i punti deboli.
+# NB: bozza v1 generata dall'assistente; l'owner (umano) validera'/aggiungera' domande reali.
+#
+# categoria:
+#   fattuale        - un singolo fatto puntuale (1 voce)
+#   procedurale     - "come si fa" multi-passo
+#   pin_dependent   - richiede una regola governante ereditata (sezione/quadro), non nel rigo
+#   disambiguazione - query lessicalmente ambigua: il fast-path inganna, serve la nav-LLM
+#   aggregazione    - richiede piu' voci/codici insieme (multi-hop ampio)
+#   fuori_corpus    - risposta NON presente nella fetta RP -> atteso RIFIUTO
+# hops: numero approssimato di parti distinte necessarie (0 per i fuori_corpus)
+#
+# ASSUNZIONI/CAVEAT (da validare):
+# - I codici "1" e "2" (borse di studio / donazioni Galliera) nella fetta sono "altre detrazioni"
+#   riportate al rigo RN17 col. 2; la numerazione di sezione non e' esplicita nella fetta.
+# - I "fuori_corpus" presumono che il topic esista nel corpus completo ma sia FUORI dalla fetta RP qui fornita.
+# - Nessun riferimento normativo o importo e' stato inventato: tutti tratti dal testo fornito.
+
+cases:
+
+  # ---------------- FATTUALE (6) ----------------
+  - id: rp-031
+    categoria: fattuale
+    difficolta: facile
+    hops: 1
+    answerable: true
+    domanda: "Qual è la percentuale di detrazione e i limiti per l'affitto di terreni agricoli ai giovani (rigo RP73)?"
+    expected_target: "Rigo RP73"
+    must_include: ["19%", "80 euro per ciascun ettaro", "1.200 euro annui", "coltivatori diretti / IAP under 35", "canone max 6.318,00 euro"]
+
+  - id: rp-032
+    categoria: fattuale
+    difficolta: facile
+    hops: 1
+    answerable: true
+    domanda: "Per il codice 4 del rigo RP71 (giovani), quali sono i requisiti di età e la misura della detrazione?"
+    expected_target: "Rigo RP71, codice 4"
+    must_include: ["20-31 anni non compiuti", "20% del canone", "massimo 2.000 euro", "minimo 991,60 euro", "primi quattro anni"]
+
+  - id: rp-033
+    categoria: fattuale
+    difficolta: facile
+    hops: 1
+    answerable: true
+    domanda: "Come va riportato il numero di particella nei righi RP51/RP52?"
+    expected_target: "Righi RP51-RP52, col. 7 (Particella)"
+    must_include: ["due parti", "cinque e quattro cifre", "barra spaziatrice", "se unica serie -> a sinistra della barra"]
+
+  - id: rp-034
+    categoria: fattuale
+    difficolta: media
+    hops: 1
+    answerable: true
+    domanda: "Cosa indica il codice serie '3X' nella colonna 4 del rigo RP53?"
+    expected_target: "Rigo RP53, col. 4 (Serie)"
+    must_include: ["registrazione telematica", "comodato/preliminare", "applicazione RAP", "Registrazione di Atto Privato"]
+
+  - id: rp-035
+    categoria: fattuale
+    difficolta: media
+    hops: 1
+    answerable: true
+    domanda: "Qual è l'agevolazione per i redditi prodotti in euro a Campione d'Italia indicati al rigo RP90?"
+    expected_target: "Rigo RP90 (art. 188-bis TUIR)"
+    must_include: ["riduzione del 30 per cento", "abbattimento minimo 26.000 euro"]
+
+  - id: rp-036
+    categoria: fattuale
+    difficolta: media
+    hops: 1
+    answerable: true
+    domanda: "In cosa consiste l'agevolazione del rigo RP91 per i redditi prodotti a Campione d'Italia?"
+    expected_target: "Rigo RP91 (legge 160/2019, commi 573-574)"
+    must_include: ["riduzione dell'imposta del 50 per cento", "legge 27 dicembre 2019 n. 160"]
+
+  # ---------------- PROCEDURALE (5) ----------------
+  - id: rp-037
+    categoria: procedurale
+    difficolta: media
+    hops: 2
+    answerable: true
+    domanda: "Come si compila il rigo RP53 se i lavori sono effettuati dal conduttore o dal comodatario?"
+    expected_target: "Rigo RP53 (+ RP51/RP52)"
+    must_include: ["dati catastali RP51/RP52", "estremi di registrazione del contratto", "colonne 3-6", "in alternativa col. 7 (codice identificativo 17 caratteri)"]
+
+  - id: rp-038
+    categoria: procedurale
+    difficolta: media
+    hops: 2
+    answerable: true
+    domanda: "Come si compila la Sezione III-B per interventi su parti comuni condominiali?"
+    expected_target: "Sezione III-B (RP51-RP53, col. 2 Condominio)"
+    must_include: ["barrare casella Condominio", "non compilare le colonne dei dati catastali", "dati nel quadro AC dell'amministratore", "CF condominio in col. 3 Sez. III-A", "condominio minimo -> CF condomino che ha fatto il bonifico"]
+
+  - id: rp-039
+    categoria: procedurale
+    difficolta: difficile
+    hops: 3
+    answerable: true
+    domanda: "Per Campione d'Italia, come si ripartisce l'agevolazione quando il 30% della somma dei redditi è inferiore o uguale a 26.000 euro?"
+    expected_target: "Rigo RP90"
+    must_include: ["agevolazione = maggiore tra 30% e 26.000", "imputazione proporzionale per tipologia", "esempio fabbricati 20.000 / lavoro autonomo 30.000 -> 10.400 e 15.600"]
+
+  - id: rp-040
+    categoria: procedurale
+    difficolta: media
+    hops: 2
+    answerable: true
+    domanda: "Cosa si indica nel rigo RP53 se l'immobile non è ancora stato accatastato al momento della dichiarazione?"
+    expected_target: "Rigo RP53, col. 8-10"
+    must_include: ["estremi della domanda di accatastamento", "data (col. 8)", "numero (col. 9)", "Provincia Ufficio AE (col. 10)"]
+
+  - id: rp-041
+    categoria: procedurale
+    difficolta: media
+    hops: 3
+    answerable: true
+    domanda: "Come si determina e dove si riporta il totale delle detrazioni della Sezione III-A?"
+    expected_target: "Righi RP48 -> RP49 -> RN14"
+    must_include: ["RP48 somma per percentuale di detrazione", "RP49 applica le aliquote (60/50/65/70/75/80/85/36/90/110%)", "totale riportato al rigo RN14"]
+
+  # ---------------- PIN_DEPENDENT (5) ----------------
+  - id: rp-042
+    categoria: pin_dependent
+    difficolta: difficile
+    hops: 2
+    answerable: true
+    domanda: "Qual è il reddito di riferimento per il calcolo delle detrazioni per inquilini (righi RP71/RP72)?"
+    expected_target: "Sezione V (regola di sezione)"
+    must_include: ["colonna 1 del rigo RN1", "+ redditi locazione a cedolare secca", "+ reddito forfettario (L.190/2014)", "+ col. 14 del rigo RS37 (ACE)"]
+
+  - id: rp-043
+    categoria: pin_dependent
+    difficolta: difficile
+    hops: 2
+    answerable: true
+    domanda: "Un contribuente con reddito complessivo superiore a 75.000 euro: come incide sulla detrazione delle spese della Sezione III-A?"
+    expected_target: "Rigo RP48 / art. 16-ter TUIR (riordino detrazioni)"
+    must_include: ["art. 16-ter TUIR", "soglia 75.000 euro", "RP48 calcolato con modalità ordinarie", "importo rideterminato ed esposto al rigo RN14"]
+
+  - id: rp-044
+    categoria: pin_dependent
+    difficolta: difficile
+    hops: 2
+    answerable: true
+    domanda: "Compilando più moduli per detrazioni inquilini con codici diversi, c'è un limite sui giorni dichiarati?"
+    expected_target: "Sezione V (regola di sezione)"
+    must_include: ["somma giorni RP71 col. 2 + RP72 col. 1", "non superiore a 365"]
+
+  - id: rp-045
+    categoria: pin_dependent
+    difficolta: difficile
+    hops: 2
+    answerable: true
+    domanda: "Il datore di lavoro ha rimborsato il canone (CU codici onere 96/97): l'inquilino può fruire delle detrazioni del rigo RP71?"
+    expected_target: "Sezione V (regola di sezione)"
+    must_include: ["spese rimborsate dal datore di lavoro", "CU punti 701-706 codici 96 e 97", "non si può beneficiare dell'agevolazione", "detrazioni forfetarie solo per la parte di canone a carico del lavoratore"]
+
+  - id: rp-046
+    categoria: pin_dependent
+    difficolta: media
+    hops: 2
+    answerable: true
+    domanda: "Per le spese di ristrutturazione sostenute dal 2016 al 2024 è obbligatorio reindicare i dati catastali nella Sezione III-B?"
+    expected_target: "Sezione III-B (regola di sezione)"
+    must_include: ["Sezione III-B obbligatoria per spese 2025", "2016-2024 non obbligatorio se già indicati in dichiarazioni precedenti"]
+
+  # ---------------- DISAMBIGUAZIONE (4) ----------------
+  - id: rp-047
+    categoria: disambiguazione
+    difficolta: difficile
+    hops: 2
+    answerable: true
+    domanda: "A cosa serve la 'colonna 2' nei righi della Sezione III-B?"
+    expected_target: "Righi RP51-RP53, col. 2 (Condominio)"
+    must_include: ["è la casella Condominio (NON 'n. giorni' di RP71/RP72)", "barrata per parti comuni condominiali", "se barrata non si compilano le colonne successive"]
+
+  - id: rp-048
+    categoria: disambiguazione
+    difficolta: difficile
+    hops: 2
+    answerable: true
+    domanda: "Cosa indica il 'codice 4' nel quadro RP?"
+    expected_target: "Rigo RP71 cod. 4 / Sezione III-A col. 2 cod. 4 (significati diversi)"
+    must_include: ["RP71 cod. 4 = detrazione giovani per locazione", "Sez. III-A col. 2 cod. 4 = detrazione 65% (anno 2016)", "serve il contesto di sezione per disambiguare"]
+
+  - id: rp-049
+    categoria: disambiguazione
+    difficolta: media
+    hops: 2
+    answerable: true
+    domanda: "Dove indico la 'data' nel rigo RP53?"
+    expected_target: "Rigo RP53, col. 3 vs col. 8"
+    must_include: ["col. 3 = data di registrazione del contratto", "col. 8 = data della domanda di accatastamento", "dipende dalla fattispecie (conduttore vs immobile non censito)"]
+
+  - id: rp-050
+    categoria: disambiguazione
+    difficolta: difficile
+    hops: 2
+    answerable: true
+    domanda: "Cosa indica il 'codice 2' in questo materiale del quadro RP?"
+    expected_target: "Codice 2 altre detrazioni (RN17) — distinto da RP71 cod. 2 e da col. 2 'Condominio'"
+    must_include: ["cod. 2 altre detrazioni = donazioni Ospedali Galliera di Genova (RN17, limite 30% imposta lorda)", "RP71 cod. 2 = contratti convenzionali a canone concordato", "col. 2 dei righi III-B = Condominio"]
+
+  # ---------------- AGGREGAZIONE (5) ----------------
+  - id: rp-051
+    categoria: aggregazione
+    difficolta: difficile
+    hops: 10
+    answerable: true
+    domanda: "Quali sono tutte le percentuali di detrazione previste nelle colonne del rigo RP48 (Sezione III-A) e i relativi codici principali?"
+    expected_target: "Rigo RP48 (Sezione III-A)"
+    must_include: ["col.1=60%", "col.2=50%", "col.3=65% (cod.4, 2016)", "col.4=70% (cod.6)", "col.5=75% (cod.8/10; cod.21/22)", "col.6=80% (cod.7)", "col.7=85% (cod.9/11)", "col.8=36% (cod.12/13)", "col.9=90% (cod.15)", "col.10=110% (Superbonus, col.7 cod.1)"]
+
+  - id: rp-052
+    categoria: aggregazione
+    difficolta: difficile
+    hops: 4
+    answerable: true
+    domanda: "Quali detrazioni per inquilini/locazioni sono previste nella Sezione V e a chi spettano?"
+    expected_target: "Sezione V (RP71/RP72/RP73)"
+    must_include: ["RP71 cod.1 abitazione principale (reddito <= 30.987,41)", "RP71 cod.2 contratti convenzionali", "RP71 cod.4 giovani 20-31 anni", "RP72 lavoratori dipendenti trasferiti (>=100 km, fuori regione, 3 anni)", "RP73 affitto terreni agricoli giovani <35 (19%)"]
+
+  - id: rp-053
+    categoria: aggregazione
+    difficolta: difficile
+    hops: 7
+    answerable: true
+    domanda: "Quali codici 'Serie' posso indicare nella colonna 4 del rigo RP53 e cosa significano?"
+    expected_target: "Rigo RP53, col. 4 (Serie)"
+    must_include: ["1T = telematica via pubblico ufficiale", "3 = ufficio Agenzia Entrate", "3P = Siria/Iris", "3T = altre applicazioni (Locazioni Web, Contratti online, RLI)", "3A e 3B = serie in uso in passato", "3X = comodato/preliminare via RAP"]
+
+  - id: rp-054
+    categoria: aggregazione
+    difficolta: difficile
+    hops: 11
+    answerable: true
+    domanda: "Quali tipologie di reddito e quali codici si indicano nella colonna 1 del rigo RP90 (Campione d'Italia)?"
+    expected_target: "Rigo RP90, col. 1 (Codice)"
+    must_include: ["1 dominicali RA", "2 agrari RA", "3 fabbricati RB", "6 capitale/diversi RL", "7 tassazione ordinaria RM", "8 plusvalenze finanziarie RT", "9 lavoro autonomo RE", "10 impresa ord. RF", "11 impresa sempl. RG", "12 forfetari RD", "13 forma associata RH"]
+
+  - id: rp-055
+    categoria: aggregazione
+    difficolta: media
+    hops: 6
+    answerable: true
+    domanda: "Quali dati catastali identificativi dell'immobile vanno indicati nei righi RP51 e RP52?"
+    expected_target: "Righi RP51-RP52"
+    must_include: ["Codice Comune (col.3, 4 o 5 caratteri)", "Terreni/Urbano T o U (col.4)", "Sezione Urbana/Comune Catastale (col.5)", "Foglio (col.6)", "Particella (col.7)", "Subalterno (col.8)"]
+
+  # ---------------- FUORI_CORPUS (5) -> atteso RIFIUTO ----------------
+  - id: rp-056
+    categoria: fuori_corpus
+    difficolta: media
+    hops: 0
+    answerable: false
+    domanda: "Come si calcolano e si detraggono le spese mediche nella Sezione I del quadro RP?"
+    expected_target: null
+    must_include: []
+
+  - id: rp-057
+    categoria: fuori_corpus
+    difficolta: media
+    hops: 0
+    answerable: false
+    domanda: "Quali aliquote IRPEF per scaglioni si applicano per determinare l'imposta lorda nel quadro RN?"
+    expected_target: null
+    must_include: []
+
+  - id: rp-058
+    categoria: fuori_corpus
+    difficolta: media
+    hops: 0
+    answerable: false
+    domanda: "Qual è la detrazione del 19% per gli interessi passivi sul mutuo per l'acquisto dell'abitazione principale e come si compila?"
+    expected_target: null
+    must_include: []
+
+  - id: rp-059
+    categoria: fuori_corpus
+    difficolta: difficile
+    hops: 0
+    answerable: false
+    domanda: "Come compila il quadro AC l'amministratore di condominio per gli interventi sulle parti comuni?"
+    expected_target: null
+    must_include: []
+
+  - id: rp-060
+    categoria: fuori_corpus
+    difficolta: media
+    hops: 0
+    answerable: false
+    domanda: "Quali sono le detrazioni per le spese di istruzione universitaria e i relativi limiti?"
+    expected_target: null
+    must_include: []

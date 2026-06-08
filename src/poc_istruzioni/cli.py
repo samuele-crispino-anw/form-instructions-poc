@@ -1095,20 +1095,28 @@ def nav_ask(
 
 @eval_app.command("load")
 def eval_load(
-    path: str = typer.Option("config/eval/rp_golden.yaml", help="YAML del golden set."),
+    dir_path: str = typer.Option("config/eval", "--dir", help="Cartella dei golden set (*.yaml)."),
 ) -> None:
-    """Carica il golden set nel DB (tabella eval_cases) e mostra la stratificazione."""
+    """Carica TUTTI i golden set (config/eval/*.yaml) nel DB e mostra la stratificazione."""
     from poc_istruzioni.bootstrap import build_context, resolve_path
     from poc_istruzioni.db.repositories import replace_eval_cases
-    from poc_istruzioni.eval.dataset import load_cases, stratification
+    from poc_istruzioni.eval.dataset import cross_tab, load_all, stratification
 
     ctx = build_context()
-    cases = load_cases(resolve_path(path))
+    cases = load_all(resolve_path(dir_path))
     replace_eval_cases(ctx.conn, cases)
+    def _dist(counter) -> str:
+        return "  ".join(f"{k}={v}" for k, v in sorted(counter.items(), key=lambda x: str(x[0])))
+
     typer.echo(f"Caricati {len(cases)} casi nel golden set.")
     for dim, counter in stratification(cases).items():
-        dist = "  ".join(f"{k}={v}" for k, v in sorted(counter.items(), key=lambda x: str(x[0])))
-        typer.echo(f"  {dim:12}: {dist}")
+        typer.echo(f"  {dim:12}: {_dist(counter)}")
+    # cross-tab: leggere se l'origine 'external' è più difficile/diversa
+    for col in ("difficolta", "categoria", "hops"):
+        typer.echo(f"\n  origin x {col}:")
+        tab = cross_tab(cases, "origin", col)
+        for origin in sorted(tab):
+            typer.echo(f"    {origin:12}: {_dist(tab[origin])}")
 
 
 @eval_app.command("list")
@@ -1129,8 +1137,9 @@ def eval_list() -> None:
         flag = "" if a.get("answerable", True) else "  [NO-ANSWER]"
         tgt = a.get("expected_target") or "—"
         typer.echo(
-            f"  {r['id']}  {r['categoria']:14} d={a.get('difficolta'):8} "
-            f"hops={a.get('hops')}  ->{tgt:14}{flag}  {r['domanda'][:60]}"
+            f"  {r['id']}  [{a.get('origin', '?'):11}] {r['categoria']:14} "
+            f"d={a.get('difficolta'):8} hops={a.get('hops')}  ->{tgt:14}{flag}  "
+            f"{r['domanda'][:55]}"
         )
     typer.echo(f"\n{len(rows)} casi.")
 

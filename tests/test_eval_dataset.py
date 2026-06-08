@@ -3,9 +3,10 @@
 import json
 from pathlib import Path
 
-from poc_istruzioni.eval.dataset import load_cases, stratification
+from poc_istruzioni.eval.dataset import cross_tab, load_all, load_cases, stratification
 
-_GOLDEN = Path(__file__).resolve().parents[1] / "config" / "eval" / "rp_golden.yaml"
+_EVAL_DIR = Path(__file__).resolve().parents[1] / "config" / "eval"
+_GOLDEN = _EVAL_DIR / "rp_golden.yaml"
 
 
 def test_golden_set_carica_e_e_stratificato() -> None:
@@ -38,4 +39,24 @@ def test_eval_cases_round_trip(tmp_path) -> None:
     rows = get_eval_cases(c)
     assert len(rows) >= 30
     a = json.loads(rows[0]["attesa_json"])
-    assert "answerable" in a and "hops" in a and "expected_target" in a
+    assert "answerable" in a and "hops" in a and "expected_target" in a and "origin" in a
+
+
+def test_load_all_unisce_due_origini_senza_collisioni() -> None:
+    cases = load_all(_EVAL_DIR)
+    assert len(cases) == 60                       # 30 kb_derived + 30 external
+    assert len({c.id for c in cases}) == 60       # id distinti, nessuna collisione
+    origins = stratification(cases)["origin"]
+    assert origins["kb_derived"] == 30 and origins["external"] == 30
+
+
+def test_origin_inferita_dal_nome_file() -> None:
+    assert all(c.origin == "kb_derived" for c in load_cases(_GOLDEN))
+    ext = load_cases(_EVAL_DIR / "rp_golden_external.yaml")
+    assert all(c.origin == "external" for c in ext)
+
+
+def test_cross_tab_origin_per_difficolta() -> None:
+    tab = cross_tab(load_all(_EVAL_DIR), "origin", "difficolta")
+    assert set(tab) == {"kb_derived", "external"}
+    assert sum(tab["external"].values()) == 30
