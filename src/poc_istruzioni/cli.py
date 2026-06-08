@@ -570,9 +570,10 @@ def _write_nav_explorer(ctx, doc_id: str, frm: int, to: int):
     """Rigenera l'explorer HTML dallo stato corrente del DB. Single source per tutti i comandi
     che modificano nodi/grafo: chiamarlo SEMPRE dopo una mutazione. Ritorna il Path o None."""
     from poc_istruzioni.bootstrap import resolve_path
-    from poc_istruzioni.db.repositories import get_nodes
+    from poc_istruzioni.db.repositories import get_nodes, get_pins
     from poc_istruzioni.serving.explorer import build_explorer_html
     from poc_istruzioni.serving.nodes import Node
+    from poc_istruzioni.serving.pins import Pin, collect_pins
     from poc_istruzioni.serving.summaries import build_scope_inputs
 
     rows = get_nodes(ctx.conn, doc_id)
@@ -587,6 +588,18 @@ def _write_nav_explorer(ctx, doc_id: str, frm: int, to: int):
     prov_keys = ("built_run_id", "summary_model", "summary_prompt_sha", "summary_ts",
                  "summary_call_id")
     provenance = {r["id"]: {k: r[k] for k in prov_keys} for r in rows}
+    pins = [
+        Pin(owner_node_id=r["owner_node_id"], owner_kind=r["owner_kind"],
+            owner_title=r["owner_title"], text=r["text"])
+        for r in get_pins(ctx.conn, doc_id)
+    ]
+    pins_by_node = {
+        n.id: [
+            {"kind": p.owner_kind, "title": p.owner_title, "text": p.text}
+            for p in collect_pins(n.id, nodes, pins)
+        ]
+        for n in nodes
+    }
     pages_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "pages"
     md_by_page = {}
     for n in range(frm, to + 1):
@@ -595,7 +608,8 @@ def _write_nav_explorer(ctx, doc_id: str, frm: int, to: int):
             md_by_page[n] = f.read_text(encoding="utf-8")
     scopes = {s.node_id: s for s in build_scope_inputs(nodes, md_by_page)}
     out_html = build_explorer_html(
-        nodes, scopes, summaries, md_by_page, doc_id=doc_id, provenance=provenance
+        nodes, scopes, summaries, md_by_page, doc_id=doc_id,
+        provenance=provenance, pins_by_node=pins_by_node,
     )
     out_path = pages_dir.parent / "nav_explorer.html"
     out_path.write_text(out_html, encoding="utf-8")
@@ -735,6 +749,46 @@ def nav_explore(
         typer.echo("Nessun nodo: esegui prima `poc nav tree`.")
         raise typer.Exit(1)
     typer.echo(f"Explorer generato: {out_path}\nAprilo nel browser (es. open '{out_path}').")
+
+
+@nav_app.command("pins")
+def nav_pins(
+    frm: int = typer.Option(69, "--from", help="Prima pagina."),
+    to: int = typer.Option(133, "--to", help="Ultima pagina."),
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+) -> None:
+    """D2.5: estrae le regole governanti (preamboli dei rami) e le pinna; rigenera l'explorer."""
+    from poc_istruzioni.bootstrap import build_context, resolve_path
+    from poc_istruzioni.db.repositories import get_nodes, replace_pins
+    from poc_istruzioni.provenance import new_run_id, utc_now_iso
+    from poc_istruzioni.serving.nodes import Node
+    from poc_istruzioni.serving.pins import build_pins
+
+    ctx = build_context()
+    rows = get_nodes(ctx.conn, doc_id)
+    if not rows:
+        typer.echo("Nessun nodo: esegui prima `poc nav tree`.")
+        raise typer.Exit(1)
+    nodes = [
+        Node(id=r["id"], parent_id=r["parent_id"], kind=r["kind"], level=r["level"],
+             title=r["title"], page_start=r["page_start"], page_end=r["page_end"], ord=r["ord"])
+        for r in rows
+    ]
+    pages_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "pages"
+    md_by_page = {}
+    for n in range(frm, to + 1):
+        f = pages_dir / f"p{n:03d}.md"
+        if f.exists():
+            md_by_page[n] = f.read_text(encoding="utf-8")
+    pins = build_pins(nodes, md_by_page)
+    replace_pins(ctx.conn, doc_id, pins, source="preamble",
+                 run_id=new_run_id(), ts=utc_now_iso())
+    typer.echo(f"Pin estratti (preamboli governanti): {len(pins)} rami.")
+    for p in pins:
+        typer.echo(f"  [{p.owner_kind}] {p.owner_title[:55]}  ({len(p.text)} char)")
+    out = _write_nav_explorer(ctx, doc_id, frm, to)
+    if out:
+        typer.echo(f"Explorer aggiornato: {out}")
 
 
 @nav_app.command("index")

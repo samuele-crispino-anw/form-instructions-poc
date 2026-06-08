@@ -129,6 +129,20 @@ CREATE TABLE IF NOT EXISTS nav_builds (
     ts              TEXT NOT NULL
 );
 
+-- Pin: regole governanti ancorate al ramo che le contiene (D2.5). Risolte agli antenati a
+-- serve-time. source='preamble' (deterministico) o 'llm' (distillazione futura).
+CREATE TABLE IF NOT EXISTS pins (
+    doc_id        TEXT NOT NULL,
+    owner_node_id INTEGER NOT NULL,
+    owner_kind    TEXT NOT NULL,
+    owner_title   TEXT NOT NULL,
+    text          TEXT NOT NULL,
+    source        TEXT NOT NULL,
+    built_run_id  TEXT,
+    ts            TEXT,
+    PRIMARY KEY (doc_id, owner_node_id)
+);
+
 -- Keyword index (D3): fast-path deterministico. term -> nodo con peso (tf-per-fonte x idf).
 CREATE TABLE IF NOT EXISTS keywords (
     doc_id  TEXT NOT NULL,

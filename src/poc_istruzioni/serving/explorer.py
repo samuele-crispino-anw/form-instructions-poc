@@ -32,9 +32,11 @@ def build_explorer_html(
     *,
     doc_id: str,
     provenance: dict[int, dict] | None = None,
+    pins_by_node: dict[int, list[dict]] | None = None,
 ) -> str:
     """Serializza l'albero in un singolo HTML navigabile (dati JSON embeddati)."""
     provenance = provenance or {}
+    pins_by_node = pins_by_node or {}
     data = []
     for n in nodes:
         scope = scopes.get(n.id)
@@ -50,6 +52,7 @@ def build_explorer_html(
                 "input": build_user_message(scope) if scope else "",
                 "summary": summaries.get(n.id) or "",
                 "prov": provenance.get(n.id) or {},
+                "pins": pins_by_node.get(n.id) or [],
                 "pages_md": _pages_markdown(md_by_page, n.page_start, n.page_end),
             }
         )
@@ -80,6 +83,8 @@ _TEMPLATE = """<!DOCTYPE html>
  .summary{background:#fff7e6;border:1px solid #f0d090;border-radius:6px;padding:10px 12px}
  .prov{background:#eef6ee;border:1px solid #cfe3cf;border-radius:6px;padding:8px 12px;
        font-size:12px;color:#345;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+ .pin{background:#eef3fb;border:1px solid #c8d8f0;border-left:4px solid #1565c0;border-radius:6px;
+      padding:8px 12px;margin-bottom:8px;white-space:pre-wrap;word-break:break-word;font-size:13px}
  .empty{color:#aaa;font-style:italic}
 </style></head><body><div id="wrap">
  <div id="tree"></div>
@@ -110,10 +115,16 @@ function select(id, el){
       + ` · prompt ${esc(p.summary_prompt_sha)||'—'} · ${esc(p.summary_ts)||'—'}`
       + ` · ledger #${p.summary_call_id||'—'}</div>`
     : `<p class="empty">(provenienza non registrata)</p>`;
+  const pins = (d.pins && d.pins.length)
+    ? d.pins.map(x =>
+        `<div class="pin"><b>[${esc(x.kind)}] ${esc(x.title)}</b>\n${esc(x.text)}</div>`
+      ).join('')
+    : `<p class="empty">(nessuna regola governante ereditata)</p>`;
   detail.innerHTML = `
     <h2><span class="k ${d.kind}">${d.kind}</span>${esc(d.title)}</h2>
     <div class="muted">pagine ${d.pages} · ${d.is_leaf?'foglia':'ramo'} · id ${d.id}</div>
     <div class="lbl">Output — summary (etichetta di navigazione)</div>${summary}
+    <div class="lbl">Regole governanti ereditate (pin)</div>${pins}
     <div class="lbl">Provenienza</div>${prov}
     <div class="lbl">Input inviato al modello</div><pre>${esc(d.input)}</pre>
     <div class="lbl">Pagine markdown associate</div><pre>${esc(d.pages_md)}</pre>`;

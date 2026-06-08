@@ -253,6 +253,27 @@ def get_nodes(conn: sqlite3.Connection, doc_id: str) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def replace_pins(
+    conn: sqlite3.Connection, doc_id: str, pins: list, *, source: str, run_id: str, ts: str
+) -> None:
+    """Sostituisce i pin (regole governanti) del documento; pins: owner_node_id/kind/title/text."""
+    conn.execute("DELETE FROM pins WHERE doc_id = ?", (doc_id,))
+    for p in pins:
+        conn.execute(
+            "INSERT OR REPLACE INTO pins "
+            "(doc_id, owner_node_id, owner_kind, owner_title, text, source, built_run_id, ts) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (doc_id, p.owner_node_id, p.owner_kind, p.owner_title, p.text, source, run_id, ts),
+        )
+    conn.commit()
+
+
+def get_pins(conn: sqlite3.Connection, doc_id: str) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT owner_node_id, owner_kind, owner_title, text FROM pins WHERE doc_id = ?", (doc_id,)
+    ).fetchall()
+
+
 def replace_keywords(conn: sqlite3.Connection, doc_id: str, entries: list) -> None:
     """Sostituisce il keyword index del documento (D3). entries con .term/.node_id/.weight."""
     conn.execute("DELETE FROM keywords WHERE doc_id = ?", (doc_id,))
