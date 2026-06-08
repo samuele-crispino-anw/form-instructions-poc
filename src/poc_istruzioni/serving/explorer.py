@@ -31,8 +31,10 @@ def build_explorer_html(
     md_by_page: dict[int, str],
     *,
     doc_id: str,
+    provenance: dict[int, dict] | None = None,
 ) -> str:
     """Serializza l'albero in un singolo HTML navigabile (dati JSON embeddati)."""
+    provenance = provenance or {}
     data = []
     for n in nodes:
         scope = scopes.get(n.id)
@@ -47,6 +49,7 @@ def build_explorer_html(
                 "is_leaf": bool(scope and scope.is_leaf),
                 "input": build_user_message(scope) if scope else "",
                 "summary": summaries.get(n.id) or "",
+                "prov": provenance.get(n.id) or {},
                 "pages_md": _pages_markdown(md_by_page, n.page_start, n.page_end),
             }
         )
@@ -75,6 +78,8 @@ _TEMPLATE = """<!DOCTYPE html>
  pre{background:#f5f5f7;border:1px solid #e2e2e6;border-radius:6px;padding:10px 12px;
      white-space:pre-wrap;word-break:break-word;margin:0}
  .summary{background:#fff7e6;border:1px solid #f0d090;border-radius:6px;padding:10px 12px}
+ .prov{background:#eef6ee;border:1px solid #cfe3cf;border-radius:6px;padding:8px 12px;
+       font-size:12px;color:#345;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
  .empty{color:#aaa;font-style:italic}
 </style></head><body><div id="wrap">
  <div id="tree"></div>
@@ -98,10 +103,18 @@ function select(id, el){
   const d = byId[id];
   const summary = d.summary ? `<div class="summary">${esc(d.summary)}</div>`
                             : `<p class="empty">(summary non ancora generato)</p>`;
+  const p = d.prov || {};
+  const prov = (p.summary_model || p.built_run_id)
+    ? `<div class="prov">build run: ${esc(p.built_run_id)||'—'}`
+      + ` · summary: ${esc(p.summary_model)||'—'}`
+      + ` · prompt ${esc(p.summary_prompt_sha)||'—'} · ${esc(p.summary_ts)||'—'}`
+      + ` · ledger #${p.summary_call_id||'—'}</div>`
+    : `<p class="empty">(provenienza non registrata)</p>`;
   detail.innerHTML = `
     <h2><span class="k ${d.kind}">${d.kind}</span>${esc(d.title)}</h2>
     <div class="muted">pagine ${d.pages} · ${d.is_leaf?'foglia':'ramo'} · id ${d.id}</div>
     <div class="lbl">Output — summary (etichetta di navigazione)</div>${summary}
+    <div class="lbl">Provenienza</div>${prov}
     <div class="lbl">Input inviato al modello</div><pre>${esc(d.input)}</pre>
     <div class="lbl">Pagine markdown associate</div><pre>${esc(d.pages_md)}</pre>`;
   detail.scrollTop = 0;

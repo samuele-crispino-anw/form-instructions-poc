@@ -31,5 +31,14 @@ def init_db(conn: sqlite3.Connection, schema_path: Path | None = None) -> None:
 def _migrate(conn: sqlite3.Connection) -> None:
     """Migrazioni leggere e idempotenti per colonne aggiunte a tabelle preesistenti."""
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(nodes)")}
-    if "summary" not in cols:
-        conn.execute("ALTER TABLE nodes ADD COLUMN summary TEXT")
+    new_cols = {
+        "summary": "TEXT",
+        "built_run_id": "TEXT",
+        "summary_model": "TEXT",
+        "summary_prompt_sha": "TEXT",
+        "summary_ts": "TEXT",
+        "summary_call_id": "INTEGER",
+    }
+    for name, typ in new_cols.items():
+        if name not in cols:
+            conn.execute(f"ALTER TABLE nodes ADD COLUMN {name} {typ}")

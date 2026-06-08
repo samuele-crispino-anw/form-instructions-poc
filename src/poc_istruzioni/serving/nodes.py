@@ -35,6 +35,14 @@ class Node:
     ord: int
 
 
+def patterns_version() -> str:
+    """Sha breve dei pattern strutturali: se cambiano, cambia la versione della build [B]."""
+    import hashlib
+
+    sig = "|".join(f"{p.pattern}:{k}:{lv}" for p, k, lv in _PATTERNS) + f"|doc:{_DOC_TITLE.pattern}"
+    return hashlib.sha256(sig.encode("utf-8")).hexdigest()[:12]
+
+
 def classify_heading(title: str) -> tuple[str, int] | None:
     """(kind, livello) per un heading strutturale; None se rumore o non-strutturale."""
     t = title.strip()

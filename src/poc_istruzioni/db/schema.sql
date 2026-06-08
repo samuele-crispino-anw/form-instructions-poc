@@ -110,7 +110,23 @@ CREATE TABLE IF NOT EXISTS nodes (
     page_end   INTEGER NOT NULL,
     ord        INTEGER NOT NULL,          -- ordine di lettura
     summary    TEXT,                      -- etichetta di navigazione scope-aware (D2)
+    built_run_id      TEXT,               -- run di build che ha creato il nodo (FK nav_builds) [B]
+    summary_model     TEXT,               -- modello che ha generato il summary [A]
+    summary_prompt_sha TEXT,              -- sha del prompt usato per il summary [A]
+    summary_ts        TEXT,               -- timestamp di generazione del summary [A]
+    summary_call_id   INTEGER,            -- riga ledger della chiamata (FK llm_calls) [A]
     PRIMARY KEY (doc_id, id)
+);
+
+-- Record di build dell'albero di navigazione (tracciabilità struttura) [B].
+CREATE TABLE IF NOT EXISTS nav_builds (
+    run_id          TEXT PRIMARY KEY,
+    doc_id          TEXT NOT NULL,
+    page_from       INTEGER NOT NULL,
+    page_to         INTEGER NOT NULL,
+    n_nodes         INTEGER NOT NULL,
+    pattern_version TEXT,                 -- sha dei pattern strutturali usati (riproducibilità)
+    ts              TEXT NOT NULL
 );
 
 -- Feedback umano sulle pagine andate in revisione (chiusura del ciclo human-in-the-loop).

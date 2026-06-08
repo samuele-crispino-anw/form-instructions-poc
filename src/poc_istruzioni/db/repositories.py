@@ -210,16 +210,40 @@ def insert_review(conn: sqlite3.Connection, row: ReviewRow) -> None:
     conn.commit()
 
 
-def insert_nodes(conn: sqlite3.Connection, doc_id: str, nodes: list) -> None:
-    """Sostituisce l'albero di navigazione del documento (D1)."""
+def insert_nodes(
+    conn: sqlite3.Connection, doc_id: str, nodes: list, *, run_id: str | None = None
+) -> None:
+    """Sostituisce l'albero di navigazione del documento (D1); lega i nodi alla run di build."""
     conn.execute("DELETE FROM nodes WHERE doc_id = ?", (doc_id,))
     for n in nodes:
         conn.execute(
             "INSERT INTO nodes "
-            "(id, doc_id, parent_id, kind, level, title, page_start, page_end, ord) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (n.id, doc_id, n.parent_id, n.kind, n.level, n.title, n.page_start, n.page_end, n.ord),
+            "(id, doc_id, parent_id, kind, level, title, page_start, page_end, ord, built_run_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (n.id, doc_id, n.parent_id, n.kind, n.level, n.title,
+             n.page_start, n.page_end, n.ord, run_id),
         )
+    conn.commit()
+
+
+def insert_nav_build(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    doc_id: str,
+    page_from: int,
+    page_to: int,
+    n_nodes: int,
+    pattern_version: str,
+    ts: str,
+) -> None:
+    """Registra una ricostruzione dell'albero di navigazione (tracciabilità struttura) [B]."""
+    conn.execute(
+        "INSERT OR REPLACE INTO nav_builds "
+        "(run_id, doc_id, page_from, page_to, n_nodes, pattern_version, ts) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (run_id, doc_id, page_from, page_to, n_nodes, pattern_version, ts),
+    )
     conn.commit()
 
 
@@ -230,10 +254,21 @@ def get_nodes(conn: sqlite3.Connection, doc_id: str) -> list[sqlite3.Row]:
 
 
 def update_node_summary(
-    conn: sqlite3.Connection, doc_id: str, node_id: int, summary: str
+    conn: sqlite3.Connection,
+    doc_id: str,
+    node_id: int,
+    summary: str,
+    *,
+    model: str | None = None,
+    prompt_sha: str | None = None,
+    ts: str | None = None,
+    call_id: int | None = None,
 ) -> None:
+    """Scrive il summary di un nodo con la sua provenienza (modello/prompt/ts/chiamata) [A]."""
     conn.execute(
-        "UPDATE nodes SET summary = ? WHERE doc_id = ? AND id = ?", (summary, doc_id, node_id)
+        "UPDATE nodes SET summary = ?, summary_model = ?, summary_prompt_sha = ?, "
+        "summary_ts = ?, summary_call_id = ? WHERE doc_id = ? AND id = ?",
+        (summary, model, prompt_sha, ts, call_id, doc_id, node_id),
     )
     conn.commit()
 

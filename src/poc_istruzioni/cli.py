@@ -584,6 +584,9 @@ def _write_nav_explorer(ctx, doc_id: str, frm: int, to: int):
         for r in rows
     ]
     summaries = {r["id"]: r["summary"] for r in rows}
+    prov_keys = ("built_run_id", "summary_model", "summary_prompt_sha", "summary_ts",
+                 "summary_call_id")
+    provenance = {r["id"]: {k: r[k] for k in prov_keys} for r in rows}
     pages_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "pages"
     md_by_page = {}
     for n in range(frm, to + 1):
@@ -591,7 +594,9 @@ def _write_nav_explorer(ctx, doc_id: str, frm: int, to: int):
         if f.exists():
             md_by_page[n] = f.read_text(encoding="utf-8")
     scopes = {s.node_id: s for s in build_scope_inputs(nodes, md_by_page)}
-    out_html = build_explorer_html(nodes, scopes, summaries, md_by_page, doc_id=doc_id)
+    out_html = build_explorer_html(
+        nodes, scopes, summaries, md_by_page, doc_id=doc_id, provenance=provenance
+    )
     out_path = pages_dir.parent / "nav_explorer.html"
     out_path.write_text(out_html, encoding="utf-8")
     return out_path
@@ -605,8 +610,14 @@ def nav_tree(
 ) -> None:
     """D1: costruisce l'albero di navigazione (per pattern strutturale) e lo mostra."""
     from poc_istruzioni.bootstrap import build_context, resolve_path
-    from poc_istruzioni.db.repositories import insert_nodes
-    from poc_istruzioni.serving.nodes import build_tree, parse_structural_headings, render_tree
+    from poc_istruzioni.db.repositories import insert_nav_build, insert_nodes
+    from poc_istruzioni.provenance import new_run_id, utc_now_iso
+    from poc_istruzioni.serving.nodes import (
+        build_tree,
+        parse_structural_headings,
+        patterns_version,
+        render_tree,
+    )
 
     ctx = build_context()
     pages_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "pages"
@@ -617,8 +628,13 @@ def nav_tree(
         if f.exists():
             md_by_page[n] = f.read_text(encoding="utf-8")
 
+    run_id = new_run_id()
     nodes = build_tree(parse_structural_headings(md_by_page), slice_pages)
-    insert_nodes(ctx.conn, doc_id, nodes)
+    insert_nodes(ctx.conn, doc_id, nodes, run_id=run_id)
+    insert_nav_build(
+        ctx.conn, run_id=run_id, doc_id=doc_id, page_from=frm, page_to=to,
+        n_nodes=len(nodes), pattern_version=patterns_version(), ts=utc_now_iso(),
+    )
     typer.echo(render_tree(nodes))
     kinds = {}
     for n in nodes:
@@ -642,6 +658,7 @@ def nav_summaries(
     from poc_istruzioni.config import load_prompt
     from poc_istruzioni.db.repositories import get_nodes, update_node_summary
     from poc_istruzioni.llm.client import LlmClient
+    from poc_istruzioni.provenance import sha256_text, utc_now_iso
     from poc_istruzioni.serving.nodes import Node
     from poc_istruzioni.serving.summaries import build_scope_inputs, generate_summary
 
@@ -678,6 +695,7 @@ def nav_summaries(
 
     model = ctx.settings.model_for("compile")
     system = load_prompt("node_summary")
+    prompt_sha = sha256_text(system)[:16]  # provenienza: quale prompt ha generato il summary [A]
     client = LlmClient(ctx.conn, ctx.prices, settings=ctx.settings)
     titles = {n.id: n.title for n in nodes}
 
@@ -687,7 +705,10 @@ def nav_summaries(
         if not force and existing.get(s.node_id):
             continue
         text, res = generate_summary(client, s, model=model, system_prompt=system)
-        update_node_summary(ctx.conn, doc_id, s.node_id, text)
+        update_node_summary(
+            ctx.conn, doc_id, s.node_id, text,
+            model=res.model, prompt_sha=prompt_sha, ts=utc_now_iso(), call_id=res.call_id,
+        )
         total_usd += res.cost.usd
         done += 1
         typer.echo(f"\n[{s.kind}] {titles[s.node_id][:70]}")
