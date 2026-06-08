@@ -566,6 +566,37 @@ def review_resolve(
     )
 
 
+def _write_nav_explorer(ctx, doc_id: str, frm: int, to: int):
+    """Rigenera l'explorer HTML dallo stato corrente del DB. Single source per tutti i comandi
+    che modificano nodi/grafo: chiamarlo SEMPRE dopo una mutazione. Ritorna il Path o None."""
+    from poc_istruzioni.bootstrap import resolve_path
+    from poc_istruzioni.db.repositories import get_nodes
+    from poc_istruzioni.serving.explorer import build_explorer_html
+    from poc_istruzioni.serving.nodes import Node
+    from poc_istruzioni.serving.summaries import build_scope_inputs
+
+    rows = get_nodes(ctx.conn, doc_id)
+    if not rows:
+        return None
+    nodes = [
+        Node(id=r["id"], parent_id=r["parent_id"], kind=r["kind"], level=r["level"],
+             title=r["title"], page_start=r["page_start"], page_end=r["page_end"], ord=r["ord"])
+        for r in rows
+    ]
+    summaries = {r["id"]: r["summary"] for r in rows}
+    pages_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "pages"
+    md_by_page = {}
+    for n in range(frm, to + 1):
+        f = pages_dir / f"p{n:03d}.md"
+        if f.exists():
+            md_by_page[n] = f.read_text(encoding="utf-8")
+    scopes = {s.node_id: s for s in build_scope_inputs(nodes, md_by_page)}
+    out_html = build_explorer_html(nodes, scopes, summaries, md_by_page, doc_id=doc_id)
+    out_path = pages_dir.parent / "nav_explorer.html"
+    out_path.write_text(out_html, encoding="utf-8")
+    return out_path
+
+
 @nav_app.command("tree")
 def nav_tree(
     frm: int = typer.Option(69, "--from", help="Prima pagina (default: inizio quadro RP)."),
@@ -593,6 +624,96 @@ def nav_tree(
     for n in nodes:
         kinds[n.kind] = kinds.get(n.kind, 0) + 1
     typer.echo(f"\n{len(nodes)} nodi: {kinds}")
+    p = _write_nav_explorer(ctx, doc_id, frm, to)  # ricalcolo forzato dell'explorer
+    if p:
+        typer.echo(f"Explorer aggiornato: {p}")
+
+
+@nav_app.command("summaries")
+def nav_summaries(
+    frm: int = typer.Option(69, "--from", help="Prima pagina (per il testo delle foglie)."),
+    to: int = typer.Option(133, "--to", help="Ultima pagina."),
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+    limit: int = typer.Option(0, help="Mini-run: genera solo N nodi rappresentativi (0 = tutti)."),
+    force: bool = typer.Option(False, "--force", help="Rigenera anche i riassunti gia' presenti."),
+) -> None:
+    """D2: genera le etichette di navigazione scope-aware dei nodi (LLM, compile-once)."""
+    from poc_istruzioni.bootstrap import build_context, resolve_path
+    from poc_istruzioni.config import load_prompt
+    from poc_istruzioni.db.repositories import get_nodes, update_node_summary
+    from poc_istruzioni.llm.client import LlmClient
+    from poc_istruzioni.serving.nodes import Node
+    from poc_istruzioni.serving.summaries import build_scope_inputs, generate_summary
+
+    ctx = build_context()
+    rows = get_nodes(ctx.conn, doc_id)
+    if not rows:
+        typer.echo("Nessun nodo: esegui prima `poc nav tree`.")
+        raise typer.Exit(1)
+
+    nodes = [
+        Node(id=r["id"], parent_id=r["parent_id"], kind=r["kind"], level=r["level"],
+             title=r["title"], page_start=r["page_start"], page_end=r["page_end"], ord=r["ord"])
+        for r in rows
+    ]
+    existing = {r["id"]: r["summary"] for r in rows}
+
+    pages_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "pages"
+    md_by_page = {}
+    for n in range(frm, to + 1):
+        f = pages_dir / f"p{n:03d}.md"
+        if f.exists():
+            md_by_page[n] = f.read_text(encoding="utf-8")
+
+    scopes = build_scope_inputs(nodes, md_by_page)
+    if limit:  # campione rappresentativo: 1 quadro + 1 sezione + foglie fino a `limit`
+        sample = [s for s in scopes if s.kind == "quadro"][:1]
+        sample += [s for s in scopes if s.kind == "sezione"][:1]
+        for s in scopes:
+            if len(sample) >= limit:
+                break
+            if s.is_leaf and s not in sample:
+                sample.append(s)
+        scopes = sample[:limit]
+
+    model = ctx.settings.model_for("compile")
+    system = load_prompt("node_summary")
+    client = LlmClient(ctx.conn, ctx.prices, settings=ctx.settings)
+    titles = {n.id: n.title for n in nodes}
+
+    total_usd = 0.0
+    done = 0
+    for s in scopes:
+        if not force and existing.get(s.node_id):
+            continue
+        text, res = generate_summary(client, s, model=model, system_prompt=system)
+        update_node_summary(ctx.conn, doc_id, s.node_id, text)
+        total_usd += res.cost.usd
+        done += 1
+        typer.echo(f"\n[{s.kind}] {titles[s.node_id][:70]}")
+        typer.echo(f"  -> {text}")
+
+    typer.echo(f"\nGenerati {done} riassunti con {model}. Costo: ${total_usd:.4f}")
+    p = _write_nav_explorer(ctx, doc_id, frm, to)  # ricalcolo forzato dell'explorer
+    if p:
+        typer.echo(f"Explorer aggiornato: {p}")
+
+
+@nav_app.command("explore")
+def nav_explore(
+    frm: int = typer.Option(69, "--from", help="Prima pagina."),
+    to: int = typer.Option(133, "--to", help="Ultima pagina."),
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+) -> None:
+    """Rigenera l'explorer HTML statico (struttura + input + pagine + summary) per il browser."""
+    from poc_istruzioni.bootstrap import build_context
+
+    ctx = build_context()
+    out_path = _write_nav_explorer(ctx, doc_id, frm, to)
+    if out_path is None:
+        typer.echo("Nessun nodo: esegui prima `poc nav tree`.")
+        raise typer.Exit(1)
+    typer.echo(f"Explorer generato: {out_path}\nAprilo nel browser (es. open '{out_path}').")
 
 
 @app.command()

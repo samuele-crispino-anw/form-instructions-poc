@@ -229,6 +229,15 @@ def get_nodes(conn: sqlite3.Connection, doc_id: str) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def update_node_summary(
+    conn: sqlite3.Connection, doc_id: str, node_id: int, summary: str
+) -> None:
+    conn.execute(
+        "UPDATE nodes SET summary = ? WHERE doc_id = ? AND id = ?", (summary, doc_id, node_id)
+    )
+    conn.commit()
+
+
 def update_conversion_status(conn: sqlite3.Connection, doc_id: str, n: int, status: str) -> None:
     """Aggiorna lo stato di una conversione (es. dopo risoluzione umana)."""
     conn.execute(

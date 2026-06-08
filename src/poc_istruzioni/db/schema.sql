@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     page_start INTEGER NOT NULL,
     page_end   INTEGER NOT NULL,
     ord        INTEGER NOT NULL,          -- ordine di lettura
+    summary    TEXT,                      -- etichetta di navigazione scope-aware (D2)
     PRIMARY KEY (doc_id, id)
 );
 

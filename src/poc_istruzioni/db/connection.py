@@ -24,4 +24,12 @@ def init_db(conn: sqlite3.Connection, schema_path: Path | None = None) -> None:
     """Applica lo schema (CREATE TABLE IF NOT EXISTS): sicuro da rieseguire."""
     sql = (schema_path or _SCHEMA_PATH).read_text(encoding="utf-8")
     conn.executescript(sql)
+    _migrate(conn)
     conn.commit()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Migrazioni leggere e idempotenti per colonne aggiunte a tabelle preesistenti."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(nodes)")}
+    if "summary" not in cols:
+        conn.execute("ALTER TABLE nodes ADD COLUMN summary TEXT")
