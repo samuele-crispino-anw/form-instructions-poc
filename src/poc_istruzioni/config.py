@@ -78,6 +78,15 @@ class Escalation(BaseModel):
     economical_first: bool  # True = parti da Haiku (economia); False = parti da Opus (accuratezza)
 
 
+class Retrieval(BaseModel):
+    """Gate del fast-path D3: quando fidarsi dell'indice vs escalare alla navigazione-LLM."""
+
+    model_config = ConfigDict(extra="forbid")
+    gate_min_abs: float = 8.0   # punteggio minimo del top-1 per fidarsi del fast-path
+    gate_margin: float = 1.5    # il top-1 deve superare il top-2 di questo fattore (netto)
+    top_k: int = 8              # candidati portati alla navigazione-LLM
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     paths: Paths
@@ -89,6 +98,7 @@ class Settings(BaseModel):
     gate: Gate
     lint: Lint
     escalation: Escalation
+    retrieval: Retrieval = Retrieval()  # opzionale: default sensati, tarabili in [retrieval]
 
     def model_for(self, scope: str) -> str:
         """Model id Anthropic per uno scopo (es. 'router', 'conversion')."""

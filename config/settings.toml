@@ -20,6 +20,12 @@ route_a_economical = "claude-haiku-4-5"
 route_a_strong     = "claude-opus-4-8"
 route_b            = "claude-opus-4-8"
 
+[retrieval]
+# Gate del fast-path D3 (orchestrazione retrieval). Tarabili in eval.
+gate_min_abs = 8.0   # punteggio minimo del top-1 per servire dal fast-path senza LLM
+gate_margin  = 1.5   # il top-1 deve battere il top-2 di questo fattore per essere "netto"
+top_k        = 8     # candidati passati alla navigazione-LLM quando il gate non è netto
+
 [llm]
 max_tokens = 4096
 

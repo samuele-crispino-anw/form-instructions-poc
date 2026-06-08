@@ -846,6 +846,125 @@ def nav_match(
         typer.echo(f"  {sc:7.2f}  [{kind}] {title[:62]}  (p.{ps}-{pe})")
 
 
+@nav_app.command("retrieve")
+def nav_retrieve(
+    query: str = typer.Argument(..., help="Domanda dell'utente."),
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+    show_context: bool = typer.Option(False, "--show-context", help="Stampa il contesto servito."),
+) -> None:
+    """D-orchestrazione: fast-path -> gate -> (navigazione-LLM) -> pin -> contesto + trace."""
+    import json
+
+    from poc_istruzioni.bootstrap import build_context, resolve_path
+    from poc_istruzioni.config import load_aliases, load_prompt
+    from poc_istruzioni.db.repositories import get_keywords, get_nodes, get_pins
+    from poc_istruzioni.llm.client import LlmClient
+    from poc_istruzioni.provenance import new_run_id, utc_now_iso
+    from poc_istruzioni.serving.keywords import IndexEntry, score_nodes
+    from poc_istruzioni.serving.nodes import Node
+    from poc_istruzioni.serving.pins import Pin, collect_pins
+    from poc_istruzioni.serving.retrieval import (
+        build_served_context,
+        classify_fastpath,
+        navigate_llm,
+    )
+    from poc_istruzioni.serving.summaries import _page_text
+
+    ctx = build_context()
+    rows = get_nodes(ctx.conn, doc_id)
+    if not rows:
+        typer.echo("Nessun nodo: esegui prima `poc nav tree`/`index`/`pins`.")
+        raise typer.Exit(1)
+    nodes = [
+        Node(id=r["id"], parent_id=r["parent_id"], kind=r["kind"], level=r["level"],
+             title=r["title"], page_start=r["page_start"], page_end=r["page_end"], ord=r["ord"])
+        for r in rows
+    ]
+    by_id = {n.id: n for n in nodes}
+    summaries = {r["id"]: r["summary"] for r in rows}
+    entries = [
+        IndexEntry(term=r["term"], node_id=r["node_id"], weight=r["weight"])
+        for r in get_keywords(ctx.conn, doc_id)
+    ]
+    pins = [
+        Pin(owner_node_id=r["owner_node_id"], owner_kind=r["owner_kind"],
+            owner_title=r["owner_title"], text=r["text"])
+        for r in get_pins(ctx.conn, doc_id)
+    ]
+    cfg = ctx.settings.retrieval
+    ranked = score_nodes(query, entries, load_aliases())
+    gate, reason = classify_fastpath(ranked, min_abs=cfg.gate_min_abs, margin=cfg.gate_margin)
+
+    cost = 0.0
+    if gate == "netto":
+        method, target = "fast_path", ranked[0][0]
+    else:
+        shortlist = [nid for nid, _ in ranked[: cfg.top_k]] or [
+            n.id for n in nodes if n.kind in ("sezione", "rigo")
+        ]
+        cand = [
+            (n.id, n.kind, n.title, summaries.get(n.id) or "")
+            for n in nodes if n.id in set(shortlist)
+        ]
+        client = LlmClient(ctx.conn, ctx.prices, settings=ctx.settings)
+        target, res = navigate_llm(
+            query, cand, client,
+            model=ctx.settings.model_for("router"), system_prompt=load_prompt("nav_router"),
+        )
+        cost += res.cost.usd
+        method = "navigation_llm" if target is not None else "refused"
+
+    typer.echo(f"Query: {query!r}")
+    typer.echo(f"Gate: {gate} ({reason})  ->  metodo: {method}")
+    typer.echo("Top candidati fast-path:")
+    for nid, sc in ranked[:5]:
+        n = by_id.get(nid)
+        typer.echo(f"  {sc:7.2f}  [{n.kind}] {n.title[:55]}" if n else f"  {sc:7.2f}  ?{nid}")
+
+    served, pin_owners = "", []
+    if target is None:
+        typer.echo("\nEsito: REFUSED — nessuna voce pertinente trovata.")
+    else:
+        t = by_id[target]
+        md = {}
+        pages_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "pages"
+        for p in range(t.page_start, t.page_end + 1):
+            f = pages_dir / f"p{p:03d}.md"
+            if f.exists():
+                md[p] = f.read_text(encoding="utf-8")
+        pinned = collect_pins(target, nodes, pins)
+        pin_owners = [p.owner_node_id for p in pinned]
+        served = build_served_context(
+            t.title, _page_text(md, t.page_start, t.page_end), pinned
+        )
+        typer.echo(f"\nVoce servita: [{t.kind}] {t.title}  (p.{t.page_start}-{t.page_end})")
+        typer.echo(f"Pin ereditati: {[f'{p.owner_kind}:{p.owner_node_id}' for p in pinned]}")
+        typer.echo(f"Contesto servito: {len(served)} char")
+    eur = round(cost * ctx.prices.currency.usd_to_eur, 4)
+    typer.echo(f"Costo retrieval: ${cost:.4f} (€{eur})")
+    if show_context and served:
+        typer.echo("\n" + "=" * 60 + "\n" + served)
+
+    # Persistenza trace (FR-T1/B6): query + trace strutturata.
+    qid = new_run_id()
+    trace = {
+        "gate": gate, "reason": reason, "method": method, "target_node_id": target,
+        "candidates": ranked[:cfg.top_k], "pin_owners": pin_owners,
+    }
+    esito = "refused" if target is None else method
+    ctx.conn.execute(
+        "INSERT OR REPLACE INTO queries (query_id, testo, ts, route_json, esito, costo_eur) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (qid, query, utc_now_iso(), json.dumps(trace, ensure_ascii=False), esito, eur),
+    )
+    ctx.conn.execute(
+        "INSERT OR REPLACE INTO answer_traces (query_id, trace_json) VALUES (?, ?)",
+        (qid, json.dumps(trace, ensure_ascii=False)),
+    )
+    ctx.conn.commit()
+    typer.echo(f"Trace registrata: query_id={qid}")
+
+
 @app.command()
 def smoke(
     scope: str = typer.Option("router", help="Scopo->modello da settings.toml [models]."),
