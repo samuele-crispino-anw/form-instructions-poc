@@ -12,8 +12,8 @@ db_path = "data/poc.db"
 [models]
 conversion = "claude-opus-4-8"   # FR-B2: trascrizione VLM pagina->markdown
 compile    = "claude-opus-4-8"   # FR-D2: estrazione one-time DB ontologico
-router     = "claude-haiku-4-5"  # FR-B4: classificazione sezione
-answer     = "claude-haiku-4-5"  # FR-B6/FR-D4: generazione risposta runtime
+router     = "claude-haiku-4-5"  # FR-B4: navigazione/disambiguazione sui summary
+answer     = "claude-opus-4-8"   # FR-B6: risposta baseline B (qualità). D-runtime userà uno scope a parte
 eval       = "claude-haiku-4-5"  # FR-E: LLM-judge
 # Tier per la conversione (Graduata): A economica (Haiku), A forte (Opus), B vision (Opus).
 route_a_economical = "claude-haiku-4-5"

@@ -25,9 +25,15 @@ class RetrievalResult:
     method: str          # fast_path | navigation_llm | refused
     target_node_id: int | None
     candidates: list[tuple[int, float]]
-    pin_owners: list[int] = field(default_factory=list)
+    target_title: str = ""
+    target_pages: str = ""
+    pins: list = field(default_factory=list)      # list[Pin] ereditati nello scope
     served_text: str = ""
     cost_usd: float = 0.0
+
+    @property
+    def pin_owners(self) -> list[int]:
+        return [p.owner_node_id for p in self.pins]
 
 
 def classify_fastpath(

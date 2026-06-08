@@ -11,7 +11,7 @@ def test_settings_model_per_scopo() -> None:
     assert s.model_for("conversion") == "claude-opus-4-8"
     assert s.model_for("compile") == "claude-opus-4-8"
     assert s.model_for("router") == "claude-haiku-4-5"
-    assert s.model_for("answer") == "claude-haiku-4-5"
+    assert s.model_for("answer") == "claude-opus-4-8"  # baseline B: risposta con Opus
 
 
 def test_settings_scope_sconosciuto_solleva() -> None:

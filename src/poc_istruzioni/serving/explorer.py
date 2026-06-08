@@ -33,10 +33,12 @@ def build_explorer_html(
     doc_id: str,
     provenance: dict[int, dict] | None = None,
     pins_by_node: dict[int, list[dict]] | None = None,
+    keywords_by_node: dict[int, list[str]] | None = None,
 ) -> str:
     """Serializza l'albero in un singolo HTML navigabile (dati JSON embeddati)."""
     provenance = provenance or {}
     pins_by_node = pins_by_node or {}
+    keywords_by_node = keywords_by_node or {}
     data = []
     for n in nodes:
         scope = scopes.get(n.id)
@@ -53,6 +55,7 @@ def build_explorer_html(
                 "summary": summaries.get(n.id) or "",
                 "prov": provenance.get(n.id) or {},
                 "pins": pins_by_node.get(n.id) or [],
+                "kw": keywords_by_node.get(n.id) or [],
                 "pages_md": _pages_markdown(md_by_page, n.page_start, n.page_end),
             }
         )
@@ -85,6 +88,8 @@ _TEMPLATE = """<!DOCTYPE html>
        font-size:12px;color:#345;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
  .pin{background:#eef3fb;border:1px solid #c8d8f0;border-left:4px solid #1565c0;border-radius:6px;
       padding:8px 12px;margin-bottom:8px;white-space:pre-wrap;word-break:break-word;font-size:13px}
+ .kw{display:inline-block;background:#f0f0f3;border:1px solid #ddd;border-radius:10px;
+     padding:1px 9px;margin:2px 2px;font-size:12px;color:#444}
  .empty{color:#aaa;font-style:italic}
 </style></head><body><div id="wrap">
  <div id="tree"></div>
@@ -120,10 +125,14 @@ function select(id, el){
         `<div class="pin"><b>[${esc(x.kind)}] ${esc(x.title)}</b>\n${esc(x.text)}</div>`
       ).join('')
     : `<p class="empty">(nessuna regola governante ereditata)</p>`;
+  const kw = (d.kw && d.kw.length)
+    ? d.kw.map(t => `<span class="kw">${esc(t)}</span>`).join(' ')
+    : `<p class="empty">(nessuna keyword indicizzata)</p>`;
   detail.innerHTML = `
     <h2><span class="k ${d.kind}">${d.kind}</span>${esc(d.title)}</h2>
     <div class="muted">pagine ${d.pages} · ${d.is_leaf?'foglia':'ramo'} · id ${d.id}</div>
     <div class="lbl">Output — summary (etichetta di navigazione)</div>${summary}
+    <div class="lbl">Keyword indicizzate (D3, top per peso)</div><div>${kw}</div>
     <div class="lbl">Regole governanti ereditate (pin)</div>${pins}
     <div class="lbl">Provenienza</div>${prov}
     <div class="lbl">Input inviato al modello</div><pre>${esc(d.input)}</pre>

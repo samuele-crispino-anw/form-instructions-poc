@@ -18,3 +18,4 @@ data/*.db-*
 
 # OS
 .DS_Store
+data/logs/

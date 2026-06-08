@@ -570,7 +570,7 @@ def _write_nav_explorer(ctx, doc_id: str, frm: int, to: int):
     """Rigenera l'explorer HTML dallo stato corrente del DB. Single source per tutti i comandi
     che modificano nodi/grafo: chiamarlo SEMPRE dopo una mutazione. Ritorna il Path o None."""
     from poc_istruzioni.bootstrap import resolve_path
-    from poc_istruzioni.db.repositories import get_nodes, get_pins
+    from poc_istruzioni.db.repositories import get_keywords, get_nodes, get_pins
     from poc_istruzioni.serving.explorer import build_explorer_html
     from poc_istruzioni.serving.nodes import Node
     from poc_istruzioni.serving.pins import Pin, collect_pins
@@ -600,6 +600,14 @@ def _write_nav_explorer(ctx, doc_id: str, frm: int, to: int):
         ]
         for n in nodes
     }
+    # keyword top-per-nodo (per peso) per l'explorer
+    kw_by_node: dict[int, list[tuple[str, float]]] = {}
+    for r in get_keywords(ctx.conn, doc_id):
+        kw_by_node.setdefault(r["node_id"], []).append((r["term"], r["weight"]))
+    keywords_by_node = {
+        nid: [t for t, _ in sorted(terms, key=lambda x: x[1], reverse=True)[:14]]
+        for nid, terms in kw_by_node.items()
+    }
     pages_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "pages"
     md_by_page = {}
     for n in range(frm, to + 1):
@@ -609,7 +617,7 @@ def _write_nav_explorer(ctx, doc_id: str, frm: int, to: int):
     scopes = {s.node_id: s for s in build_scope_inputs(nodes, md_by_page)}
     out_html = build_explorer_html(
         nodes, scopes, summaries, md_by_page, doc_id=doc_id,
-        provenance=provenance, pins_by_node=pins_by_node,
+        provenance=provenance, pins_by_node=pins_by_node, keywords_by_node=keywords_by_node,
     )
     out_path = pages_dir.parent / "nav_explorer.html"
     out_path.write_text(out_html, encoding="utf-8")
@@ -846,34 +854,28 @@ def nav_match(
         typer.echo(f"  {sc:7.2f}  [{kind}] {title[:62]}  (p.{ps}-{pe})")
 
 
-@nav_app.command("retrieve")
-def nav_retrieve(
-    query: str = typer.Argument(..., help="Domanda dell'utente."),
-    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
-    show_context: bool = typer.Option(False, "--show-context", help="Stampa il contesto servito."),
-) -> None:
-    """D-orchestrazione: fast-path -> gate -> (navigazione-LLM) -> pin -> contesto + trace."""
-    import json
+def _run_retrieval(ctx, query: str, doc_id: str):
+    """Orchestrazione: fast-path D3 -> gate -> (navigazione-LLM) -> pin -> contesto servito.
 
-    from poc_istruzioni.bootstrap import build_context, resolve_path
+    Ritorna un RetrievalResult popolato (riusato da `nav retrieve` e `nav ask`).
+    """
+    from poc_istruzioni.bootstrap import resolve_path
     from poc_istruzioni.config import load_aliases, load_prompt
     from poc_istruzioni.db.repositories import get_keywords, get_nodes, get_pins
     from poc_istruzioni.llm.client import LlmClient
-    from poc_istruzioni.provenance import new_run_id, utc_now_iso
     from poc_istruzioni.serving.keywords import IndexEntry, score_nodes
     from poc_istruzioni.serving.nodes import Node
     from poc_istruzioni.serving.pins import Pin, collect_pins
     from poc_istruzioni.serving.retrieval import (
+        RetrievalResult,
         build_served_context,
         classify_fastpath,
         navigate_llm,
     )
     from poc_istruzioni.serving.summaries import _page_text
 
-    ctx = build_context()
     rows = get_nodes(ctx.conn, doc_id)
     if not rows:
-        typer.echo("Nessun nodo: esegui prima `poc nav tree`/`index`/`pins`.")
         raise typer.Exit(1)
     nodes = [
         Node(id=r["id"], parent_id=r["parent_id"], kind=r["kind"], level=r["level"],
@@ -914,55 +916,178 @@ def nav_retrieve(
         cost += res.cost.usd
         method = "navigation_llm" if target is not None else "refused"
 
-    typer.echo(f"Query: {query!r}")
-    typer.echo(f"Gate: {gate} ({reason})  ->  metodo: {method}")
-    typer.echo("Top candidati fast-path:")
-    for nid, sc in ranked[:5]:
-        n = by_id.get(nid)
-        typer.echo(f"  {sc:7.2f}  [{n.kind}] {n.title[:55]}" if n else f"  {sc:7.2f}  ?{nid}")
-
-    served, pin_owners = "", []
-    if target is None:
-        typer.echo("\nEsito: REFUSED — nessuna voce pertinente trovata.")
-    else:
+    result = RetrievalResult(
+        query=query, gate=gate, reason=reason, method=method,
+        target_node_id=target, candidates=ranked[: cfg.top_k], cost_usd=cost,
+    )
+    if target is not None:
         t = by_id[target]
-        md = {}
         pages_dir = resolve_path(ctx.settings.paths.markdown_dir) / doc_id / "pages"
+        md = {}
         for p in range(t.page_start, t.page_end + 1):
             f = pages_dir / f"p{p:03d}.md"
             if f.exists():
                 md[p] = f.read_text(encoding="utf-8")
-        pinned = collect_pins(target, nodes, pins)
-        pin_owners = [p.owner_node_id for p in pinned]
-        served = build_served_context(
-            t.title, _page_text(md, t.page_start, t.page_end), pinned
+        result.pins = collect_pins(target, nodes, pins)
+        result.target_title = t.title
+        result.target_pages = f"{t.page_start}-{t.page_end}"
+        result.served_text = build_served_context(
+            t.title, _page_text(md, t.page_start, t.page_end), result.pins
         )
-        typer.echo(f"\nVoce servita: [{t.kind}] {t.title}  (p.{t.page_start}-{t.page_end})")
-        typer.echo(f"Pin ereditati: {[f'{p.owner_kind}:{p.owner_node_id}' for p in pinned]}")
-        typer.echo(f"Contesto servito: {len(served)} char")
-    eur = round(cost * ctx.prices.currency.usd_to_eur, 4)
-    typer.echo(f"Costo retrieval: ${cost:.4f} (€{eur})")
-    if show_context and served:
-        typer.echo("\n" + "=" * 60 + "\n" + served)
+    return result
 
-    # Persistenza trace (FR-T1/B6): query + trace strutturata.
-    qid = new_run_id()
+
+def _persist_query_trace(ctx, qid: str, query: str, r, *, eur: float, extra: dict | None = None):
+    """Salva query + answer_trace strutturata (FR-T1/B6)."""
+    import json
+
+    from poc_istruzioni.provenance import utc_now_iso
+
     trace = {
-        "gate": gate, "reason": reason, "method": method, "target_node_id": target,
-        "candidates": ranked[:cfg.top_k], "pin_owners": pin_owners,
+        "gate": r.gate, "reason": r.reason, "method": r.method,
+        "target_node_id": r.target_node_id, "candidates": r.candidates,
+        "pin_owners": r.pin_owners, **(extra or {}),
     }
-    esito = "refused" if target is None else method
+    esito = "refused" if r.target_node_id is None else r.method
+    payload = json.dumps(trace, ensure_ascii=False)
     ctx.conn.execute(
         "INSERT OR REPLACE INTO queries (query_id, testo, ts, route_json, esito, costo_eur) "
         "VALUES (?, ?, ?, ?, ?, ?)",
-        (qid, query, utc_now_iso(), json.dumps(trace, ensure_ascii=False), esito, eur),
+        (qid, query, utc_now_iso(), payload, esito, eur),
     )
     ctx.conn.execute(
         "INSERT OR REPLACE INTO answer_traces (query_id, trace_json) VALUES (?, ?)",
-        (qid, json.dumps(trace, ensure_ascii=False)),
+        (qid, payload),
     )
     ctx.conn.commit()
+
+
+@nav_app.command("retrieve")
+def nav_retrieve(
+    query: str = typer.Argument(..., help="Domanda dell'utente."),
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+    show_context: bool = typer.Option(False, "--show-context", help="Stampa il contesto servito."),
+) -> None:
+    """D-orchestrazione (solo retrieval): fast-path -> gate -> (nav-LLM) -> pin -> contesto."""
+    from poc_istruzioni.bootstrap import build_context
+    from poc_istruzioni.db.repositories import get_nodes
+    from poc_istruzioni.provenance import new_run_id
+
+    ctx = build_context()
+    r = _run_retrieval(ctx, query, doc_id)
+    nmeta = {n["id"]: (n["kind"], n["title"]) for n in get_nodes(ctx.conn, doc_id)}
+    typer.echo(f"Query: {query!r}")
+    typer.echo(f"Gate: {r.gate} ({r.reason})  ->  metodo: {r.method}")
+    typer.echo("Top candidati fast-path:")
+    for nid, sc in r.candidates[:5]:
+        kind, title = nmeta.get(nid, ("?", "?"))
+        typer.echo(f"  {sc:7.2f}  [{kind}] {title[:55]}")
+    if r.target_node_id is None:
+        typer.echo("\nEsito: REFUSED — nessuna voce pertinente trovata.")
+    else:
+        typer.echo(f"\nVoce servita: {r.target_title}  (p.{r.target_pages})")
+        typer.echo(f"Pin ereditati: {[f'{p.owner_kind}:{p.owner_node_id}' for p in r.pins]}")
+        typer.echo(f"Contesto servito: {len(r.served_text)} char")
+    eur = round(r.cost_usd * ctx.prices.currency.usd_to_eur, 4)
+    typer.echo(f"Costo retrieval: ${r.cost_usd:.4f} (€{eur})")
+    if show_context and r.served_text:
+        typer.echo("\n" + "=" * 60 + "\n" + r.served_text)
+    qid = new_run_id()
+    _persist_query_trace(ctx, qid, query, r, eur=eur)
     typer.echo(f"Trace registrata: query_id={qid}")
+
+
+def _extract_reasoning(raw) -> str:
+    """Estrae l'eventuale ragionamento (thinking) dai blocchi della risposta."""
+    out = []
+    for b in getattr(raw, "content", []) or []:
+        if getattr(b, "type", None) == "thinking":
+            out.append(getattr(b, "thinking", "") or getattr(b, "text", ""))
+    return "\n".join(x for x in out if x).strip()
+
+
+@nav_app.command("ask")
+def nav_ask(
+    query: str = typer.Argument(..., help="Domanda dell'utente."),
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+) -> None:
+    """Q&A end-to-end: retrieval -> risposta (Opus, citata) -> log .md strutturato del giro."""
+    from poc_istruzioni.bootstrap import build_context, resolve_path
+    from poc_istruzioni.config import load_prompt
+    from poc_istruzioni.db.repositories import get_nodes
+    from poc_istruzioni.llm.client import LlmClient
+    from poc_istruzioni.provenance import new_run_id, utc_now_iso
+    from poc_istruzioni.tracing.qa_log import QaLog, fence
+
+    ctx = build_context()
+    qid, ts = new_run_id(), utc_now_iso()
+    r = _run_retrieval(ctx, query, doc_id)
+    nmeta = {n["id"]: (n["kind"], n["title"]) for n in get_nodes(ctx.conn, doc_id)}
+    log = QaLog(query_id=qid, ts=ts, doc_id=doc_id, query=query)
+
+    # 1. Query
+    log.section("Query utente", fence(query))
+    # 2. Retrieval
+    cand = "\n".join(
+        f"- `{sc:7.2f}`  [{nmeta.get(nid, ('?', '?'))[0]}] {nmeta.get(nid, ('?', '?'))[1]}"
+        for nid, sc in r.candidates
+    ) or "(nessun candidato dal fast-path)"
+    log.section(
+        "Retrieval",
+        f"- **gate:** `{r.gate}` — {r.reason}\n- **metodo:** `{r.method}`\n"
+        f"- **voce scelta:** {r.target_title or '—'} (id {r.target_node_id})\n\n"
+        f"**Candidati fast-path (score):**\n{cand}",
+    )
+
+    answer, reasoning, model = "", "", ctx.settings.model_for("answer")
+    if r.target_node_id is None:
+        answer = "Le istruzioni fornite non contengono la risposta a questa domanda."
+        log.section("Parti recuperate", "_Nessuna: il retrieval non ha individuato una voce._")
+        log.section("Contesto passato all'LLM", "_Nessuna chiamata: rifiuto a monte._")
+        log.section("Risposta", fence(answer))
+    else:
+        pins_md = "\n\n".join(
+            f"**[{p.owner_kind}] {p.owner_title}**\n{fence(p.text)}" for p in r.pins
+        ) or "_(nessun pin ereditato)_"
+        log.section(
+            "Parti recuperate",
+            f"**Voce servita:** {r.target_title} (p.{r.target_pages})\n\n"
+            f"**Regole governanti ereditate (pin):**\n{pins_md}",
+        )
+        system = load_prompt("answer")
+        user = f"CONTESTO:\n{r.served_text}\n\nDOMANDA: {query}"
+        log.section(
+            "Contesto passato all'LLM",
+            f"**Modello:** `{model}`\n\n**System prompt:**\n{fence(system)}\n\n"
+            f"**Messaggio utente (contesto + domanda):**\n{fence(user)}",
+        )
+        client = LlmClient(ctx.conn, ctx.prices, settings=ctx.settings)
+        res = client.complete(
+            scopo=f"answer:{qid[:12]}", model=model, system=system,
+            messages=[{"role": "user", "content": user}],
+            thinking={"type": "adaptive", "display": "summarized"},
+        )
+        answer, reasoning = res.text.strip(), _extract_reasoning(res.raw)
+        r.cost_usd += res.cost.usd
+        body = fence(answer)
+        if reasoning:
+            body += f"\n\n### Ragionamento del modello\n{fence(reasoning)}"
+        log.section("Risposta dell'LLM", body)
+
+    eur = round(r.cost_usd * ctx.prices.currency.usd_to_eur, 4)
+    log.section(
+        "Costi e trace",
+        f"- **modello risposta:** `{model}`\n- **costo totale (retrieval + risposta):** "
+        f"${r.cost_usd:.4f} (€{eur})\n- **query_id:** `{qid}`",
+    )
+    logs_dir = resolve_path(ctx.settings.paths.markdown_dir).parent / "logs" / "qa"
+    log_path = log.write(logs_dir)
+    _persist_query_trace(ctx, qid, query, r, eur=eur, extra={"log": str(log_path)})
+
+    typer.echo(f"\n=== RISPOSTA ===\n{answer}\n")
+    if reasoning:
+        typer.echo(f"(ragionamento registrato: {len(reasoning)} char)")
+    typer.echo(f"costo: ${r.cost_usd:.4f} (€{eur}) · log: {log_path}")
 
 
 @app.command()
