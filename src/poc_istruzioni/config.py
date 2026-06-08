@@ -152,3 +152,20 @@ def load_prices(path: Path | None = None) -> Prices:
 def load_prompt(name: str) -> str:
     """Carica un prompt versionato da config/prompts/<name>.md (es. 'conversion')."""
     return (_config_dir() / "prompts" / f"{name}.md").read_text(encoding="utf-8")
+
+
+def load_aliases(path: Path | None = None) -> dict[str, list[str]]:
+    """Alias-table per il keyword index (D3): sinonimo colloquiale -> termini canonici.
+
+    Formato YAML: aliases: [{term: dentista, expand: [spese sanitarie, ...]}, ...].
+    """
+    import yaml
+
+    raw = (path or _config_dir() / "alias_table.yaml").read_text(encoding="utf-8")
+    data = yaml.safe_load(raw) or {}
+    out: dict[str, list[str]] = {}
+    for entry in data.get("aliases", []):
+        term = entry.get("term")
+        if term:
+            out[term] = list(entry.get("expand", []))
+    return out

@@ -1,12 +1,22 @@
-# FR-B4: alias-table curata. Termine colloquiale -> sezione (quadro).
+# D3 keyword index — alias-table curata: sinonimo/colloquiale -> termini CANONICI.
+# Colma il gap di vocabolario utente/documento: a match-time la query viene espansa con
+# i termini `expand`, che poi agganciano l'indice (costruito da titoli + summary dei nodi).
 # Match deterministico, versionato, modificabile senza toccare codice.
-# Popolata in Fase 2; qui un seme di esempio per il quadro pilota RP.
+# In Fase 4 l'ontologia auto-popolerà questa tabella. Qui un seme per il quadro pilota RP.
 aliases:
-  - term: spese sanitarie
-    quadro: RP
+  - term: dentista
+    expand: [spese sanitarie, spese mediche]
   - term: farmacia
-    quadro: RP
+    expand: [spese sanitarie, medicinali]
   - term: ticket
-    quadro: RP
+    expand: [spese sanitarie, prestazioni]
   - term: occhiali
-    quadro: RP
+    expand: [spese sanitarie, dispositivi medici]
+  - term: mutuo
+    expand: [interessi mutui ipotecari, abitazione principale]
+  - term: affitto
+    expand: [canoni locazione, inquilini]
+  - term: ristrutturazione
+    expand: [recupero patrimonio edilizio, interventi]
+  - term: asilo nido
+    expand: [rette asili nido]

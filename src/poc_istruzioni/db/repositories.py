@@ -253,6 +253,23 @@ def get_nodes(conn: sqlite3.Connection, doc_id: str) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def replace_keywords(conn: sqlite3.Connection, doc_id: str, entries: list) -> None:
+    """Sostituisce il keyword index del documento (D3). entries con .term/.node_id/.weight."""
+    conn.execute("DELETE FROM keywords WHERE doc_id = ?", (doc_id,))
+    for e in entries:
+        conn.execute(
+            "INSERT OR REPLACE INTO keywords (doc_id, term, node_id, weight) VALUES (?, ?, ?, ?)",
+            (doc_id, e.term, e.node_id, e.weight),
+        )
+    conn.commit()
+
+
+def get_keywords(conn: sqlite3.Connection, doc_id: str) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT term, node_id, weight FROM keywords WHERE doc_id = ?", (doc_id,)
+    ).fetchall()
+
+
 def update_node_summary(
     conn: sqlite3.Connection,
     doc_id: str,

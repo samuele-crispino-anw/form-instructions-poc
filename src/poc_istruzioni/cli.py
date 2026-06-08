@@ -737,6 +737,61 @@ def nav_explore(
     typer.echo(f"Explorer generato: {out_path}\nAprilo nel browser (es. open '{out_path}').")
 
 
+@nav_app.command("index")
+def nav_index(doc_id: str = typer.Option("PF1-2026", help="Identificatore documento.")) -> None:
+    """D3: costruisce il keyword index (term->nodo, tf x idf) da titoli + summary dei nodi."""
+    from poc_istruzioni.bootstrap import build_context
+    from poc_istruzioni.db.repositories import get_nodes, replace_keywords
+    from poc_istruzioni.serving.keywords import build_index
+
+    ctx = build_context()
+    rows = get_nodes(ctx.conn, doc_id)
+    if not rows:
+        typer.echo("Nessun nodo: esegui prima `poc nav tree`.")
+        raise typer.Exit(1)
+    items = [(r["id"], r["title"], r["summary"] or "") for r in rows]
+    entries = build_index(items)
+    replace_keywords(ctx.conn, doc_id, entries)
+    n_terms = len({e.term for e in entries})
+    typer.echo(
+        f"Keyword index: {len(entries)} voci, {n_terms} termini distinti su {len(items)} nodi."
+    )
+
+
+@nav_app.command("match")
+def nav_match(
+    query: str = typer.Argument(..., help="Domanda/parole dell'utente."),
+    doc_id: str = typer.Option("PF1-2026", help="Identificatore documento."),
+    top: int = typer.Option(5, help="Quanti nodi candidati mostrare."),
+) -> None:
+    """D3: risolve una query nei nodi candidati via fast-path deterministico (no LLM)."""
+    from poc_istruzioni.bootstrap import build_context
+    from poc_istruzioni.config import load_aliases
+    from poc_istruzioni.db.repositories import get_keywords, get_nodes
+    from poc_istruzioni.serving.keywords import IndexEntry, expand_query, score_nodes
+
+    ctx = build_context()
+    rows = get_keywords(ctx.conn, doc_id)
+    if not rows:
+        typer.echo("Indice vuoto: esegui prima `poc nav index`.")
+        raise typer.Exit(1)
+    entries = [IndexEntry(term=r["term"], node_id=r["node_id"], weight=r["weight"]) for r in rows]
+    aliases = load_aliases()
+    meta = {
+        r["id"]: (r["kind"], r["title"], r["page_start"], r["page_end"])
+        for r in get_nodes(ctx.conn, doc_id)
+    }
+    ranked = score_nodes(query, entries, aliases)[:top]
+    typer.echo(f"Query: {query!r}")
+    typer.echo(f"Termini cercati (espansi): {sorted(set(expand_query(query, aliases)))}\n")
+    if not ranked:
+        typer.echo("Nessun candidato dal fast-path -> si passerebbe alla navigazione-LLM.")
+        return
+    for nid, sc in ranked:
+        kind, title, ps, pe = meta.get(nid, ("?", "?", 0, 0))
+        typer.echo(f"  {sc:7.2f}  [{kind}] {title[:62]}  (p.{ps}-{pe})")
+
+
 @app.command()
 def smoke(
     scope: str = typer.Option("router", help="Scopo->modello da settings.toml [models]."),

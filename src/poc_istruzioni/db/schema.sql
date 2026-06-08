@@ -129,6 +129,17 @@ CREATE TABLE IF NOT EXISTS nav_builds (
     ts              TEXT NOT NULL
 );
 
+-- Keyword index (D3): fast-path deterministico. term -> nodo con peso (tf-per-fonte x idf).
+CREATE TABLE IF NOT EXISTS keywords (
+    doc_id  TEXT NOT NULL,
+    term    TEXT NOT NULL,
+    node_id INTEGER NOT NULL,
+    weight  REAL NOT NULL,
+    PRIMARY KEY (doc_id, term, node_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_keywords_term ON keywords(doc_id, term);
+
 -- Feedback umano sulle pagine andate in revisione (chiusura del ciclo human-in-the-loop).
 CREATE TABLE IF NOT EXISTS reviews (
     doc_id          TEXT NOT NULL,
