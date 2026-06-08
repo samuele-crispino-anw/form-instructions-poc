@@ -174,6 +174,24 @@ scaling — non solo i bug, ma anche le assunzioni smentite dai dati.
 
 ---
 
+## L9 — Morfologia italiana: il match esatto degli alias manca le varianti flesse
+
+- **Contesto:** keyword index D3, espansione query via alias-table (sinonimo -> termini canonici).
+- **Sintomo:** la query "ho **ristrutturato** casa" non attiva l'alias `ristrutturazione` (confronto
+  per sottostringa esatta), quindi il fast-path non instrada al recupero edilizio. Invece
+  "dentista", "mutuo", "asilo nido" funzionano (match diretto o alias che combacia).
+- **Causa:** sia gli alias sia i token dell'indice sono confrontati per forma esatta; l'italiano
+  ha forte flessione (ristruttura-re/-to/-zione, paga-re/-to/-menti) -> stesse radici, forme diverse.
+- **Possibili correzioni (da valutare in eval, non in anticipo):** stemming leggero (Snowball IT)
+  su query+indice+alias; oppure normalizzazione per radice; oppure arricchire l'alias-table con le
+  varianti. Trade-off: lo stemming aumenta il recall ma può creare collisioni (sovra-stemming).
+- **Principio (generale):** per il retrieval lessicale su italiano serve una strategia di
+  **normalizzazione morfologica** (stemming/lemmatizzazione) condivisa tra query, indice e alias;
+  altrimenti il match esatto è fragile sulle forme flesse. Da decidere sui dati di eval. Vale per
+  qualunque documento in italiano, non solo PF1.
+
+---
+
 ## Indice rapido dei principi generali (checklist per la pipeline futura)
 
 1. Pattern strutturali del dominio **configurabili per famiglia** di documento (non hardcoded).
