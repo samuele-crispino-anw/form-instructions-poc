@@ -19,3 +19,4 @@ data/*.db-*
 # OS
 .DS_Store
 data/logs/
+data/una_tantum_extractions/
